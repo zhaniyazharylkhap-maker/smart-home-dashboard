@@ -79,6 +79,8 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
         gas=row.gas,
         smoke=row.smoke,
         timestamp=row.timestamp,
+        trace_id=payload.trace_id,
+        t_sim=payload.t_sim,
     )
     connection_manager.broadcast(
         {
@@ -121,6 +123,8 @@ def get_latest_per_device(db: Session) -> list[TelemetryReading]:
                 gas=t.gas,
                 smoke=t.smoke,
                 timestamp=t.timestamp,
+                trace_id=None,
+                t_sim=None,
             )
         )
     return sorted(out, key=lambda r: r.device_id)

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
+  Gauge,
   Radio,
   RefreshCw,
   Shield,
@@ -58,7 +59,7 @@ function Kpi({
 }
 
 export default function DashboardPage() {
-  const { readings, connected, error, reload } = useLiveTelemetry();
+  const { readings, connected, error, reload, latencyStats } = useLiveTelemetry();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
 
@@ -133,7 +134,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
           label="Home status"
           value={stats ? statusLabel : "—"}
@@ -167,6 +168,22 @@ export default function DashboardPage() {
           value={readings.length}
           hint="Latest row per device"
           icon={Activity}
+        />
+        <Kpi
+          label="E2E latency"
+          value={
+            latencyStats.latest == null
+              ? "—"
+              : `${Math.round(latencyStats.latest)} ms`
+          }
+          hint={
+            latencyStats.avg == null
+              ? "Waiting for traced messages"
+              : `avg ${Math.round(latencyStats.avg)} ms · min ${Math.round(
+                  latencyStats.min ?? latencyStats.avg
+                )} · max ${Math.round(latencyStats.max ?? latencyStats.avg)} · n=${latencyStats.count}`
+          }
+          icon={Gauge}
         />
       </div>
 

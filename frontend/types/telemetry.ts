@@ -8,6 +8,8 @@ export type TelemetryReading = {
   gas: number | null;
   smoke: number | null;
   timestamp: string;
+  trace_id?: string | null;
+  t_sim?: number | null;
 };
 
 export type LatestTelemetryResponse = {

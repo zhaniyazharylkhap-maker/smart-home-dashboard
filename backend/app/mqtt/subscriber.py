@@ -26,6 +26,11 @@ def _on_message(_client: mqtt.Client, _userdata: object, msg: mqtt.MQTTMessage) 
 
     db = SessionLocal()
     try:
+        logger.info(
+            "mqtt telemetry received trace_id=%s t_sim=%s",
+            payload.trace_id,
+            payload.t_sim,
+        )
         ingest_telemetry(db, payload)
     except Exception:  # noqa: BLE001
         logger.exception("telemetry ingest failed")

@@ -15,6 +15,8 @@ class TelemetryIngest(BaseModel):
     gas: float | None = None
     smoke: float | None = None
     timestamp: datetime | None = None
+    trace_id: str | None = None
+    t_sim: int | None = None
 
 
 class TelemetryReading(BaseModel):
@@ -27,6 +29,8 @@ class TelemetryReading(BaseModel):
     gas: float | None = None
     smoke: float | None = None
     timestamp: datetime
+    trace_id: str | None = None
+    t_sim: int | None = None
 
     model_config = {"from_attributes": False}
 

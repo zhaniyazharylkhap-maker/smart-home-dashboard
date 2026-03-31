@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import time
+import uuid
 from datetime import datetime, timezone
 
 from app.config import load_settings
@@ -32,6 +33,13 @@ def random_payload(device_id: str, room: str) -> dict:
         "smoke": round(random.uniform(0.0, 0.05), 3),
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+
+
+def with_trace(payload: dict) -> dict:
+    out = dict(payload)
+    out["trace_id"] = str(uuid.uuid4())
+    out["t_sim"] = int(time.time() * 1000)
+    return out
 
 
 def run_dataset_replay() -> None:
@@ -62,9 +70,17 @@ def run_dataset_replay() -> None:
     pub = Publisher(s.mqtt_host, s.mqtt_port, s.mqtt_topic)
     try:
         for row in iter_rows(csv_path):
-            payload = apply_scenario(mapper.map_row(row), s.mode)
+            payload = with_trace(apply_scenario(mapper.map_row(row), s.mode))
             pub.publish(payload)
-            print(f"[simulator] published {payload}")
+            print(
+                "[simulator] published",
+                {
+                    "trace_id": payload.get("trace_id"),
+                    "t_sim": payload.get("t_sim"),
+                    "device_id": payload.get("device_id"),
+                    "room": payload.get("room"),
+                },
+            )
             time.sleep(s.interval_sec)
     finally:
         pub.close()
@@ -77,9 +93,19 @@ def run_random_mode() -> None:
     try:
         while True:
             for idx, device_id in enumerate(devices):
-                payload = random_payload(device_id, ROOMS[idx % len(ROOMS)])
+                payload = with_trace(
+                    random_payload(device_id, ROOMS[idx % len(ROOMS)])
+                )
                 pub.publish(payload)
-                print(f"[simulator] published {payload}")
+                print(
+                    "[simulator] published",
+                    {
+                        "trace_id": payload.get("trace_id"),
+                        "t_sim": payload.get("t_sim"),
+                        "device_id": payload.get("device_id"),
+                        "room": payload.get("room"),
+                    },
+                )
             time.sleep(max(s.interval_sec, 1.0))
     finally:
         pub.close()

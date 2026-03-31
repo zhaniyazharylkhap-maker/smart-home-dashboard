@@ -22,7 +22,15 @@ export function useLiveTelemetry() {
   );
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [latencyStats, setLatencyStats] = useState<{
+    latest: number | null;
+    avg: number | null;
+    min: number | null;
+    max: number | null;
+    count: number;
+  }>({ latest: null, avg: null, min: null, max: null, count: 0 });
   const wsRef = useRef<WebSocket | null>(null);
+  const latenciesRef = useRef<number[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -77,9 +85,23 @@ export function useLiveTelemetry() {
         try {
           const msg = JSON.parse(String(ev.data)) as WsMessage;
           if (msg.type === "telemetry" && msg.payload) {
-            setByDevice((prev) =>
-              mergeReading(prev, msg.payload as TelemetryReading)
-            );
+            const reading = msg.payload as TelemetryReading;
+            if (typeof reading.t_sim === "number") {
+              const li = Date.now() - reading.t_sim;
+              if (Number.isFinite(li) && li >= 0 && li < 300_000) {
+                const next = [...latenciesRef.current, li].slice(-50);
+                latenciesRef.current = next;
+                const sum = next.reduce((a, b) => a + b, 0);
+                setLatencyStats({
+                  latest: li,
+                  avg: next.length ? sum / next.length : null,
+                  min: next.length ? Math.min(...next) : null,
+                  max: next.length ? Math.max(...next) : null,
+                  count: next.length,
+                });
+              }
+            }
+            setByDevice((prev) => mergeReading(prev, reading));
           }
         } catch {
           /* ignore */
@@ -105,5 +127,5 @@ export function useLiveTelemetry() {
     [byDevice]
   );
 
-  return { readings, connected, error, reload: load };
+  return { readings, connected, error, reload: load, latencyStats };
 }
