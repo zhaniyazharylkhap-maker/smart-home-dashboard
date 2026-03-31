@@ -67,10 +67,13 @@ services:
       context: ../simulator
       dockerfile: Dockerfile
     environment:
+      PYTHONUNBUFFERED: "1"
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
       MQTT_TOPIC: smarthome/telemetry
-      INTERVAL_SEC: "3"
+      INTERVAL_SEC: "2"
+      SIM_MODE: dataset_replay
+      DATASET_PATH: data/iot_telemetry_data.csv
     depends_on:
       - mqtt
 

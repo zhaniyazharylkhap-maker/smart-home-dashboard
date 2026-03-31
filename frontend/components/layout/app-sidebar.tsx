@@ -36,7 +36,7 @@ export function AppSidebar() {
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Nexus Twin
+            Smart Home
           </p>
           <p className="text-sm font-semibold">Control</p>
         </div>

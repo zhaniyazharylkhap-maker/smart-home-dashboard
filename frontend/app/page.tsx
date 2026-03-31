@@ -31,8 +31,8 @@ const features = [
     icon: LineChart,
   },
   {
-    title: "Digital twin ready",
-    body: "Room-aware modeling built for expansion into 3D twin views.",
+    title: "Device orchestration",
+    body: "Room-aware modeling for scalable automation and monitoring.",
     icon: Cpu,
   },
 ];
@@ -54,7 +54,7 @@ export default function LandingPage() {
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Nexus Twin
+              Smart Home
             </p>
             <p className="text-sm font-semibold">Smart Home Cloud</p>
           </div>
@@ -92,7 +92,7 @@ export default function LandingPage() {
               </div>
               <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl">
                 AI-powered IoT smart home{" "}
-                <span className="text-accent">digital twin</span> platform
+                <span className="text-accent">monitoring</span> platform
               </h1>
               <p className="mt-5 max-w-xl text-base text-muted-foreground">
                 Monitor telemetry, orchestrate scenarios, and resolve incidents from a
@@ -193,31 +193,10 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="mt-20 rounded-3xl border border-border/60 bg-card/40 p-8 sm:p-10">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold">Pricing (mock)</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Starter is free for development. Pro adds SSO, retention, and SLA —
-                placeholders for your pitch deck.
-              </p>
-            </div>
-            <div className="flex gap-4">
-              <div className="rounded-2xl border border-border/70 bg-background/40 px-6 py-4">
-                <p className="text-xs text-muted-foreground">Starter</p>
-                <p className="mt-2 text-3xl font-semibold">$0</p>
-              </div>
-              <div className="rounded-2xl border border-accent/30 bg-accent/10 px-6 py-4">
-                <p className="text-xs text-muted-foreground">Pro</p>
-                <p className="mt-2 text-3xl font-semibold">$49</p>
-              </div>
-            </div>
-          </div>
-        </section>
       </main>
 
       <footer className="border-t border-border/60 py-10 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} Nexus Twin. Built for IoT telemetry graduation projects.
+        © {new Date().getFullYear()} Smart Home Cloud. Built for IoT telemetry graduation projects.
       </footer>
     </div>
   );
