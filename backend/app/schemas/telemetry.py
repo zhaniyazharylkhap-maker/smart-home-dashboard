@@ -31,6 +31,9 @@ class TelemetryReading(BaseModel):
     timestamp: datetime
     trace_id: str | None = None
     t_sim: int | None = None
+    risk_score: float | None = None
+    risk_level: str | None = None
+    alert_reasons: list[str] | None = None
 
     model_config = {"from_attributes": False}
 

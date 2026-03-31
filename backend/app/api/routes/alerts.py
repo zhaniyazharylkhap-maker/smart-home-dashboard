@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,6 +22,14 @@ def _to_out(db: Session, a: Alert) -> AlertOut:
     if a.device_id:
         d = db.get(Device, a.device_id)
         dev_ext = d.device_id if d else None
+    reasons: list[str] | None = None
+    if a.alert_reasons:
+        try:
+            parsed = json.loads(a.alert_reasons)
+            if isinstance(parsed, list):
+                reasons = [str(x) for x in parsed]
+        except json.JSONDecodeError:
+            reasons = [a.alert_reasons]
     return AlertOut(
         id=a.id,
         room_id=a.room_id,
@@ -32,6 +41,9 @@ def _to_out(db: Session, a: Alert) -> AlertOut:
         title=a.title,
         description=a.description,
         recommended_action=a.recommended_action,
+        risk_score=a.risk_score,
+        risk_level=a.risk_level,
+        alert_reasons=reasons,
         status=a.status,
         created_at=a.created_at,
         resolved_at=a.resolved_at,

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
 from app.services.alert_engine import evaluate_telemetry
+from app.services.risk_engine import compute_risk
 from app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -64,10 +65,18 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
     db.commit()
     db.refresh(row)
 
+    risk = None
     try:
-        evaluate_telemetry(db, room, device, payload)
+        risk = evaluate_telemetry(db, room, device, payload)
     except Exception:  # noqa: BLE001
         logger.exception("alert evaluation failed")
+    if risk is None:
+        risk = compute_risk(
+            temperature=payload.temperature,
+            smoke=payload.smoke,
+            gas=payload.gas,
+            motion=payload.motion,
+        )
 
     reading = TelemetryReading(
         device_id=device.device_id,
@@ -81,6 +90,9 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
         timestamp=row.timestamp,
         trace_id=payload.trace_id,
         t_sim=payload.t_sim,
+        risk_score=risk.risk_score,
+        risk_level=risk.risk_level,
+        alert_reasons=risk.alert_reasons,
     )
     connection_manager.broadcast(
         {
@@ -112,6 +124,12 @@ def get_latest_per_device(db: Session) -> list[TelemetryReading]:
         room = db.get(Room, t.room_id) if t.room_id else None
         if not device or not room:
             continue
+        risk = compute_risk(
+            temperature=t.temperature,
+            smoke=t.smoke,
+            gas=t.gas,
+            motion=t.motion,
+        )
         out.append(
             TelemetryReading(
                 device_id=device.device_id,
@@ -125,6 +143,9 @@ def get_latest_per_device(db: Session) -> list[TelemetryReading]:
                 timestamp=t.timestamp,
                 trace_id=None,
                 t_sim=None,
+                risk_score=risk.risk_score,
+                risk_level=risk.risk_level,
+                alert_reasons=risk.alert_reasons,
             )
         )
     return sorted(out, key=lambda r: r.device_id)

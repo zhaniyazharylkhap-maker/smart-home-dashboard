@@ -29,6 +29,9 @@ export type AlertRow = {
   title: string;
   description: string | null;
   recommended_action: string | null;
+  risk_score: number | null;
+  risk_level: string | null;
+  alert_reasons: string[] | null;
   status: string;
   created_at: string;
   resolved_at: string | null;

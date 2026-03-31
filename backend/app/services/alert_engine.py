@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.models import Alert, Device, Room, Threshold
+from app.services.risk_engine import RiskResult, compute_risk
 from app.schemas.telemetry import TelemetryIngest
 from app.websocket.manager import connection_manager
 
@@ -77,6 +79,9 @@ def _create_alert(
     title: str,
     description: str | None,
     recommended_action: str | None,
+    risk_score: float | None = None,
+    risk_level: str | None = None,
+    alert_reasons: list[str] | None = None,
 ) -> Alert | None:
     if device_pk is not None and _has_open_alert(db, device_pk, alert_type):
         return None
@@ -88,6 +93,9 @@ def _create_alert(
         title=title,
         description=description,
         recommended_action=recommended_action,
+        risk_score=risk_score,
+        risk_level=risk_level,
+        alert_reasons=json.dumps(alert_reasons) if alert_reasons else None,
         status="unresolved",
     )
     db.add(row)
@@ -105,6 +113,14 @@ def _alert_payload(db: Session, alert: Alert) -> dict:
     if alert.device_id:
         d = db.get(Device, alert.device_id)
         dev_external = d.device_id if d else None
+    reasons: list[str] | None = None
+    if alert.alert_reasons:
+        try:
+            parsed = json.loads(alert.alert_reasons)
+            if isinstance(parsed, list):
+                reasons = [str(x) for x in parsed]
+        except json.JSONDecodeError:
+            reasons = [alert.alert_reasons]
     return {
         "id": alert.id,
         "room_id": alert.room_id,
@@ -116,6 +132,9 @@ def _alert_payload(db: Session, alert: Alert) -> dict:
         "title": alert.title,
         "description": alert.description,
         "recommended_action": alert.recommended_action,
+        "risk_score": alert.risk_score,
+        "risk_level": alert.risk_level,
+        "alert_reasons": reasons,
         "status": alert.status,
         "created_at": alert.created_at.isoformat(),
         "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
@@ -127,10 +146,16 @@ def evaluate_telemetry(
     room: Room,
     device: Device,
     payload: TelemetryIngest,
-) -> None:
+) -> RiskResult:
     th = _effective_thresholds(db, room.id)
     hour = datetime.now(timezone.utc).hour
     night = hour >= 22 or hour < 6
+    risk = compute_risk(
+        temperature=payload.temperature,
+        smoke=payload.smoke,
+        gas=payload.gas,
+        motion=payload.motion,
+    )
 
     if payload.temperature is not None and th.temperature_max is not None:
         if payload.temperature > th.temperature_max:
@@ -144,6 +169,9 @@ def evaluate_telemetry(
                 title="High temperature",
                 description=f"{payload.temperature:.1f}°C exceeds threshold {th.temperature_max:.1f}°C in {room.name}.",
                 recommended_action="Check HVAC, ventilation, and heat sources.",
+                risk_score=risk.risk_score,
+                risk_level=risk.risk_level,
+                alert_reasons=risk.alert_reasons,
             )
             if a:
                 connection_manager.broadcast({"type": "alert", "payload": _alert_payload(db, a)})
@@ -159,6 +187,9 @@ def evaluate_telemetry(
                 title="Gas level elevated",
                 description=f"Gas reading {payload.gas:.3f} exceeds {th.gas_max:.3f} in {room.name}.",
                 recommended_action="Ventilate the area and verify appliances; contact maintenance if persistent.",
+                risk_score=risk.risk_score,
+                risk_level=risk.risk_level,
+                alert_reasons=risk.alert_reasons,
             )
             if a:
                 connection_manager.broadcast({"type": "alert", "payload": _alert_payload(db, a)})
@@ -174,6 +205,9 @@ def evaluate_telemetry(
                 title="Smoke detected",
                 description=f"Smoke index {payload.smoke:.3f} exceeds {th.smoke_max:.3f} in {room.name}.",
                 recommended_action="Verify source; if unsure, evacuate and call emergency services.",
+                risk_score=risk.risk_score,
+                risk_level=risk.risk_level,
+                alert_reasons=risk.alert_reasons,
             )
             if a:
                 connection_manager.broadcast({"type": "alert", "payload": _alert_payload(db, a)})
@@ -193,6 +227,9 @@ def evaluate_telemetry(
                 title="Humidity out of range",
                 description=f"Humidity {payload.humidity:.1f}% outside [{th.humidity_min:.0f}, {th.humidity_max:.0f}] in {room.name}.",
                 recommended_action="Check ventilation, dehumidifier/humidifier, and leaks.",
+                risk_score=risk.risk_score,
+                risk_level=risk.risk_level,
+                alert_reasons=risk.alert_reasons,
             )
             if a:
                 connection_manager.broadcast({"type": "alert", "payload": _alert_payload(db, a)})
@@ -207,6 +244,10 @@ def evaluate_telemetry(
             title="Night motion",
             description=f"Motion detected in {room.name} during quiet hours.",
             recommended_action="Review camera or presence rules if unexpected.",
+            risk_score=risk.risk_score,
+            risk_level=risk.risk_level,
+            alert_reasons=risk.alert_reasons,
         )
         if a:
             connection_manager.broadcast({"type": "alert", "payload": _alert_payload(db, a)})
+    return risk

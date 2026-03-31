@@ -6,6 +6,47 @@ import { fetchLatestTelemetry, getWsUrl } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import type { TelemetryReading, WsMessage } from "@/types/telemetry";
 
+type LiveAlert = {
+  id: number;
+  room_name: string | null;
+  device_external_id: string | null;
+  severity: string;
+  title: string;
+  description: string | null;
+  created_at: string;
+  risk_score?: number | null;
+  risk_level?: string | null;
+  alert_reasons?: string[] | null;
+};
+
+function toLiveAlert(payload: unknown): LiveAlert | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  if (
+    typeof p.id !== "number" ||
+    typeof p.severity !== "string" ||
+    typeof p.title !== "string" ||
+    typeof p.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: p.id,
+    room_name: typeof p.room_name === "string" ? p.room_name : null,
+    device_external_id:
+      typeof p.device_external_id === "string" ? p.device_external_id : null,
+    severity: p.severity,
+    title: p.title,
+    description: typeof p.description === "string" ? p.description : null,
+    created_at: p.created_at,
+    risk_score: typeof p.risk_score === "number" ? p.risk_score : null,
+    risk_level: typeof p.risk_level === "string" ? p.risk_level : null,
+    alert_reasons: Array.isArray(p.alert_reasons)
+      ? p.alert_reasons.filter((x): x is string => typeof x === "string")
+      : null,
+  };
+}
+
 function mergeReading(
   prev: Map<string, TelemetryReading>,
   reading: TelemetryReading
@@ -22,6 +63,7 @@ export function useLiveTelemetry() {
   );
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentAlerts, setRecentAlerts] = useState<LiveAlert[]>([]);
   const [latencyStats, setLatencyStats] = useState<{
     latest: number | null;
     avg: number | null;
@@ -102,6 +144,12 @@ export function useLiveTelemetry() {
               }
             }
             setByDevice((prev) => mergeReading(prev, reading));
+            return;
+          }
+          if (msg.type === "alert" && msg.payload) {
+            const alert = toLiveAlert(msg.payload);
+            if (!alert) return;
+            setRecentAlerts((prev) => [alert, ...prev].slice(0, 8));
           }
         } catch {
           /* ignore */
@@ -127,5 +175,5 @@ export function useLiveTelemetry() {
     [byDevice]
   );
 
-  return { readings, connected, error, reload: load, latencyStats };
+  return { readings, connected, error, reload: load, latencyStats, recentAlerts };
 }

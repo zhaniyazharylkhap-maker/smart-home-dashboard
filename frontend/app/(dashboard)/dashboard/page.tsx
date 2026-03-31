@@ -59,7 +59,8 @@ function Kpi({
 }
 
 export default function DashboardPage() {
-  const { readings, connected, error, reload, latencyStats } = useLiveTelemetry();
+  const { readings, connected, error, reload, latencyStats, recentAlerts } =
+    useLiveTelemetry();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
 
@@ -192,6 +193,47 @@ export default function DashboardPage() {
           {error}
         </div>
       ) : null}
+
+      <section className="mb-8 rounded-2xl border border-border/60 bg-card/40 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Live alert messages</h2>
+          <span className="text-xs text-muted-foreground">
+            {recentAlerts.length} recent
+          </span>
+        </div>
+        {recentAlerts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No live alerts yet. Trigger higher smoke/gas/temperature conditions to
+            see alert messages in real time.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {recentAlerts.map((a) => (
+              <div
+                key={a.id}
+                className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2"
+              >
+                <p className="text-sm font-medium">
+                  {(a.room_name ?? "Unknown room").replace("_", " ")} -{" "}
+                  {a.risk_level ?? a.severity.toUpperCase()}
+                  {typeof a.risk_score === "number"
+                    ? ` (${Math.round(a.risk_score)}/100)`
+                    : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {a.title}
+                  {a.description ? ` - ${a.description}` : ""}
+                </p>
+                {a.alert_reasons && a.alert_reasons.length > 0 ? (
+                  <p className="mt-1 text-xs text-foreground/80">
+                    {a.alert_reasons.join(" · ")}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {readings.length === 0 && !error ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 py-24 text-center">

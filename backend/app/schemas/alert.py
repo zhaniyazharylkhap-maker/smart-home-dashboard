@@ -14,6 +14,9 @@ class AlertOut(BaseModel):
     title: str
     description: str | None
     recommended_action: str | None
+    risk_score: float | None
+    risk_level: str | None
+    alert_reasons: list[str] | None
     status: str
     created_at: datetime
     resolved_at: datetime | None

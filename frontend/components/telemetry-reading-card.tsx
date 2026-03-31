@@ -16,6 +16,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TelemetryReading } from "@/types/telemetry";
 import { cn } from "@/lib/utils";
 
+function riskTone(level?: string | null) {
+  if (level === "CRITICAL") return "border-rose-500/30 bg-rose-500/10 text-rose-300";
+  if (level === "WARNING") return "border-amber-500/30 bg-amber-500/10 text-amber-200";
+  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+}
+
 function Metric({
   icon: Icon,
   label,
@@ -79,10 +85,21 @@ export function TelemetryReadingCard({
                 {reading.device_id}
               </p>
             </div>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
-              <Radio className="h-3 w-3" />
-              Live
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
+                <Radio className="h-3 w-3" />
+                Live
+              </span>
+              <span
+                className={cn(
+                  "inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                  riskTone(reading.risk_level)
+                )}
+              >
+                {reading.risk_level ?? "SAFE"} ·{" "}
+                {reading.risk_score == null ? "—" : Math.round(reading.risk_score)}
+              </span>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="grid gap-2 sm:grid-cols-2">
@@ -125,6 +142,11 @@ export function TelemetryReadingCard({
           />
         </CardContent>
         <div className="border-t border-border/50 px-6 py-3 text-[11px] text-muted-foreground">
+          {reading.alert_reasons && reading.alert_reasons.length > 0 ? (
+            <p className="mb-1 line-clamp-2 text-foreground/80">
+              {reading.alert_reasons.join(" · ")}
+            </p>
+          ) : null}
           Updated{" "}
           <span className="font-mono text-foreground/90">
             {new Date(reading.timestamp).toLocaleString()}

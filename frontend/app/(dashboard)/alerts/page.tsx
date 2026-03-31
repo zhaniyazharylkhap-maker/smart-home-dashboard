@@ -25,6 +25,25 @@ function SeverityBadge({ s }: { s: string }) {
   );
 }
 
+function RiskBadge({ level }: { level: string | null }) {
+  const map: Record<string, string> = {
+    CRITICAL: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
+    WARNING: "bg-amber-500/15 text-amber-200 ring-amber-500/30",
+    SAFE: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  };
+  if (!level) return <span className="text-xs text-muted-foreground">—</span>;
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1",
+        map[level] ?? "bg-muted text-muted-foreground ring-border"
+      )}
+    >
+      {level}
+    </span>
+  );
+}
+
 export default function AlertsPage() {
   const [rows, setRows] = useState<AlertRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -129,6 +148,7 @@ function AlertTable({
         <thead className="border-b border-border/60 bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-4 py-3">Severity</th>
+            <th className="px-4 py-3">Risk</th>
             <th className="px-4 py-3">Title</th>
             <th className="px-4 py-3">Room</th>
             <th className="px-4 py-3">Device</th>
@@ -143,8 +163,21 @@ function AlertTable({
                 <SeverityBadge s={a.severity} />
               </td>
               <td className="px-4 py-3">
+                <div className="flex flex-col gap-1">
+                  <RiskBadge level={a.risk_level} />
+                  <span className="text-xs text-muted-foreground">
+                    {a.risk_score == null ? "—" : `${Math.round(a.risk_score)}/100`}
+                  </span>
+                </div>
+              </td>
+              <td className="px-4 py-3">
                 <p className="font-medium">{a.title}</p>
                 <p className="text-xs text-muted-foreground">{a.description}</p>
+                {a.alert_reasons && a.alert_reasons.length > 0 ? (
+                  <p className="mt-1 text-xs text-foreground/90">
+                    {a.alert_reasons.join(" · ")}
+                  </p>
+                ) : null}
                 {a.recommended_action ? (
                   <p className="mt-1 text-xs text-accent/90">
                     → {a.recommended_action}
