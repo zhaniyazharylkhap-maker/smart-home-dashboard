@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, func
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,6 +18,7 @@ class Telemetry(Base):
     light: Mapped[float | None] = mapped_column(Float, nullable=True)
     gas: Mapped[float | None] = mapped_column(Float, nullable=True)
     smoke: Mapped[float | None] = mapped_column(Float, nullable=True)
+    t_sim: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     received_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True

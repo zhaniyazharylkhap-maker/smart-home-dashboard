@@ -79,7 +79,7 @@ def get_latest_per_device(db: Session) -> list[TelemetryReading]:
                 smoke=t.smoke,
                 timestamp=t.timestamp,
                 trace_id=None,
-                t_sim=None,
+                t_sim=t.t_sim,
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,

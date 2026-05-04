@@ -12,6 +12,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 
 DEFAULT_TOPIC = "smarthome/telemetry"
+ROOMS = ["bedroom", "kitchen", "living_room"]
 
 
 def load_dataset(path: Path) -> tuple[str, list[dict]]:
@@ -24,17 +25,20 @@ def load_dataset(path: Path) -> tuple[str, list[dict]]:
     return device_id, [r for r in rows if isinstance(r, dict)]
 
 
-def row_to_telemetry(device_id: str, row: dict) -> dict:
+def row_to_telemetry(room: str, row: dict) -> dict:
     t_sim = int(time.time() * 1000)
     motion = int(row.get("motion", 0))
     if motion not in (0, 1):
         motion = 1 if motion else 0
     return {
-        "device_id": device_id,
-        "room": "living_room",
+        "device_id": f"{room}_sensor_01",
+        "room": room,
         "temperature": float(row["temperature"]),
+        "humidity": None,
         "light": float(row["light"]),
-        "motion": motion,
+        "motion": bool(motion),
+        "gas": 0.0,
+        "smoke": 0.0,
         "t_sim": t_sim,
     }
 
@@ -57,12 +61,16 @@ def main() -> None:
     client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION1)
     client.connect(host, port, keepalive=60)
     client.loop_start()
-    print(f"[simulator] connected {host}:{port} topic={topic} rows={len(rows)} device_id={device_id}")
+    print(
+        f"[simulator] connected {host}:{port} topic={topic} rows={len(rows)} "
+        f"dataset_device={device_id} rooms={ROOMS}"
+    )
     try:
         for row in rows:
-            payload = row_to_telemetry(device_id, row)
-            client.publish(topic, json.dumps(payload), qos=1)
-            print("[simulator] published", payload)
+            for room in ROOMS:
+                payload = row_to_telemetry(room, row)
+                client.publish(topic, json.dumps(payload), qos=1)
+                print("[simulator] published", payload)
             time.sleep(max(interval, 0.05))
     finally:
         client.loop_stop()

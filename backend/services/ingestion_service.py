@@ -19,6 +19,10 @@ def _default_room(raw: dict) -> dict:
     d = dict(raw)
     if not d.get("room"):
         d["room"] = "living_room"
+    if "gas" not in d:
+        d["gas"] = 0.0
+    if "smoke" not in d:
+        d["smoke"] = 0.0
     if "motion" in d and d["motion"] is not None and not isinstance(d["motion"], bool):
         if isinstance(d["motion"], (int, float)):
             v = int(d["motion"])
@@ -65,6 +69,7 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
         light=payload.light,
         gas=payload.gas,
         smoke=payload.smoke,
+        t_sim=payload.t_sim,
         timestamp=ts,
         received_at=received_at,
     )

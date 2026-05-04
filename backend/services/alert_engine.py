@@ -20,6 +20,7 @@ _humidity_high_since: dict[int, datetime] = {}
 
 
 def _effective_thresholds(db: Session, room_id: int) -> Threshold:
+    settings = get_settings()
     global_row = db.execute(
         select(Threshold).where(Threshold.room_id.is_(None))
     ).scalar_one_or_none()
@@ -34,6 +35,7 @@ def _effective_thresholds(db: Session, room_id: int) -> Threshold:
         humidity_min=30.0,
         humidity_max=70.0,
         offline_after_minutes=10,
+        motion_light_combo_max=settings.suspicious_motion_light_max,
     )
     if global_row:
         for attr in (
@@ -43,6 +45,7 @@ def _effective_thresholds(db: Session, room_id: int) -> Threshold:
             "humidity_min",
             "humidity_max",
             "offline_after_minutes",
+            "motion_light_combo_max",
         ):
             v = getattr(global_row, attr)
             if v is not None:
@@ -55,6 +58,7 @@ def _effective_thresholds(db: Session, room_id: int) -> Threshold:
             "humidity_min",
             "humidity_max",
             "offline_after_minutes",
+            "motion_light_combo_max",
         ):
             v = getattr(room_row, attr)
             if v is not None:
@@ -287,9 +291,12 @@ def _apply_rules(
                 _emit_alert(db, device, a)
                 created.append(a)
 
+    motion_light_max = th.motion_light_combo_max
+    if motion_light_max is None:
+        motion_light_max = settings.suspicious_motion_light_max
     if payload.motion is True and payload.light is not None:
         combo = 1.0 + float(payload.light)
-        if combo < settings.suspicious_motion_light_max:
+        if combo < motion_light_max:
             a = _create_alert(
                 db,
                 room_id=room.id,
@@ -298,7 +305,7 @@ def _apply_rules(
                 severity="warning",
                 title="Suspicious motion and light pattern",
                 description=(
-                    f"Motion with low combined light signal ({combo:.1f} < {settings.suspicious_motion_light_max}) in {room.name}."
+                    f"Motion with low combined light signal ({combo:.1f} < {motion_light_max}) in {room.name}."
                 ),
                 recommended_action="Verify occupancy and lighting; review sensor placement.",
                 risk_score=risk.risk_score,
