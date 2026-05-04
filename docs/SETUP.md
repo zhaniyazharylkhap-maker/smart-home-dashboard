@@ -2,7 +2,7 @@
 
 ## Architecture (Phase 1)
 
-Virtual sensors publish JSON telemetry to MQTT (`smarthome/telemetry`). The FastAPI backend subscribes, validates the unified payload, stores rows in PostgreSQL, and broadcasts each reading to WebSocket clients on `/ws/live`. The Next.js dashboard loads the latest per-device readings from `GET /api/telemetry/latest` and merges live WebSocket updates.
+Virtual sensors publish JSON telemetry to MQTT (`smarthome/telemetry`). The FastAPI backend subscribes, validates the unified payload, stores rows in PostgreSQL, publishes each reading to **Redis** (`telemetry:*`), and a small bridge forwards Redis messages to WebSocket clients on `/ws/live`. The Next.js dashboard loads the latest per-device readings from `GET /api/telemetry/latest` and merges live WebSocket updates.
 
 ## Prerequisites
 
@@ -24,8 +24,8 @@ Leave that terminal open. In the browser:
 - Landing: [http://localhost:3000/](http://localhost:3000/)
 - Sign in: [http://localhost:3000/login](http://localhost:3000/login) — demo **`demo@nexus.local` / `Demo123!`** (seeded after migration **002**)
 - Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
-- API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Health: [http://localhost:8000/health](http://localhost:8000/health)
+- API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 
 JWT auth protects data APIs and WebSockets. The browser stores the token (Zustand `localStorage`) and sends `Authorization: Bearer …`. WebSocket URL is `/ws/live?token=…`.
 
@@ -50,6 +50,7 @@ Services (host ports):
 | Service     | Port |
 |------------|------|
 | PostgreSQL | **5433** (default; see `POSTGRES_PORT` in `docker/.env`) |
+| Redis      | **6379** (required for live WebSocket telemetry/alerts) |
 | MQTT       | 1883 (WebSockets on 9001) |
 | Backend    | 8000 |
 | Frontend   | 3000 |
@@ -60,20 +61,20 @@ The **backend talks to Postgres inside the Docker network** (`postgres:5432`). Y
 
 Something on your machine is already using **5432** (often a local Postgres). This project defaults **`POSTGRES_PORT=5433`** in `docker/.env` so the container maps to **5433** on the host. If you changed it back to 5432, either stop the other Postgres or set `POSTGRES_PORT=5433` in `docker/.env`.
 
-The simulator container publishes every few seconds; the first telemetry rows appear shortly after startup.
+The **simulator** container publishes about once per second from `simulator/data/sensors_dataset.json`. The first telemetry rows appear shortly after startup. If live charts do not move, confirm **Redis** is up (the API does not push WebSocket updates from MQTT directly).
 
 ## Local development (without Docker for app code)
 
-### Database & MQTT
+### Database, MQTT, and Redis
 
-Run only Postgres and Mosquitto:
+Run only infrastructure:
 
 ```bash
 cd docker
-docker compose up postgres mqtt
+docker compose up postgres mqtt redis
 ```
 
-From the host, Postgres is reachable at `localhost:5433` unless you changed `POSTGRES_PORT`.
+From the host, Postgres is reachable at `localhost:5433` unless you changed `POSTGRES_PORT`. Redis is on `localhost:6379`.
 
 ### Backend
 
@@ -83,7 +84,7 @@ python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env: DATABASE_URL, MQTT_HOST=localhost
+# Defaults in .env.example: DATABASE_URL on 5433, MQTT_HOST=localhost, REDIS_URL=redis://localhost:6379/0
 alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -95,7 +96,7 @@ cd simulator
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-MQTT_HOST=localhost python main.py
+MQTT_HOST=localhost INTERVAL_SEC=1 python simulator.py
 ```
 
 ### Frontend
