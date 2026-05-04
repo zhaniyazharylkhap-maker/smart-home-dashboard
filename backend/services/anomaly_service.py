@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,10 +39,6 @@ def _load_model():
         return None
 
 
-def _normalize_if_score(raw: float) -> float:
-    return float(min(1.0, max(0.0, -float(raw))))
-
-
 def _features_for_row(t: Telemetry) -> list[float]:
     return [
         float(t.temperature or 0.0),
@@ -62,19 +59,26 @@ def _score_device(db: Session, device: Device, model: object | None) -> float:
     rows = list(db.execute(q).scalars().all())
     if not rows:
         return 0.0
-    row = rows[0]
-    X = np.asarray([_features_for_row(row)], dtype=np.float64)
     if model is None:
         return 0.0
     try:
-        scaler = getattr(model, "scaler", None)
-        clf = getattr(model, "clf", None)
-        if scaler is not None:
-            X = scaler.transform(X)
-        if clf is None:
+        scaler = model.get("scaler")
+        clf = model.get("clf")
+        if not scaler or not clf:
             return 0.0
-        raw = float(clf.decision_function(X)[0])
-        return _normalize_if_score(raw)
+        X = np.asarray([_features_for_row(r) for r in rows], dtype=np.float64)
+        X_scaled = scaler.transform(X)
+        scores = clf.decision_function(X_scaled)
+        raw_score = float(scores.mean())
+        score = 1.0 / (1.0 + math.exp(raw_score))
+        logger.debug(
+            "anomaly_score device=%s rows=%s raw_score=%s score=%s",
+            device.device_id,
+            len(rows),
+            raw_score,
+            score,
+        )
+        return float(score)
     except Exception:  # noqa: BLE001
         logger.exception("anomaly scoring failed for device %s", device.device_id)
         return 0.0
