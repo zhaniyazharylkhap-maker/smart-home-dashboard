@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 import paho.mqtt.client as mqtt
@@ -11,18 +12,24 @@ from app.core.config import cors_origin_list
 from app.db.session import SessionLocal
 from app.services.auth_service import get_user_from_token
 from app.websocket.manager import connection_manager
+from services.anomaly_service import anomaly_background_loop
+from services.ws_manager import start_redis_bridge_thread
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _mqtt_client: mqtt.Client | None = None
+_redis_stop: threading.Event | None = None
+_redis_thread: threading.Thread | None = None
+_anomaly_task: asyncio.Task[None] | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _mqtt_client
+    global _mqtt_client, _redis_stop, _redis_thread, _anomaly_task
     loop = asyncio.get_running_loop()
     connection_manager.set_loop(loop)
+    _redis_stop = threading.Event()
     try:
         from app.mqtt.subscriber import start_mqtt_client
 
@@ -30,8 +37,31 @@ async def lifespan(app: FastAPI):
         logger.info("mqtt client started")
     except Exception as e:  # noqa: BLE001
         logger.error("mqtt failed to start (telemetry will not ingest): %s", e)
+    _redis_thread = None
+    try:
+        _redis_thread = start_redis_bridge_thread(_redis_stop)
+        logger.info("redis websocket bridge started")
+    except Exception as e:  # noqa: BLE001
+        logger.error("redis websocket bridge failed to start: %s", e)
+
+    _anomaly_task = asyncio.create_task(anomaly_background_loop())
 
     yield
+
+    if _anomaly_task is not None:
+        _anomaly_task.cancel()
+        try:
+            await _anomaly_task
+        except asyncio.CancelledError:
+            pass
+        _anomaly_task = None
+
+    if _redis_stop is not None:
+        _redis_stop.set()
+    if _redis_thread is not None:
+        _redis_thread.join(timeout=5.0)
+        _redis_thread = None
+    _redis_stop = None
 
     if _mqtt_client is not None:
         _mqtt_client.loop_stop()

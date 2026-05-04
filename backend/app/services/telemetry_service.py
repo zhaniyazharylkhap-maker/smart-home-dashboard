@@ -1,19 +1,12 @@
-import logging
-from datetime import datetime, timezone
-
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
-from app.services.alert_engine import evaluate_telemetry
 from app.services.risk_engine import compute_risk
-from app.websocket.manager import connection_manager
-
-logger = logging.getLogger(__name__)
 
 
-def _ensure_room(db: Session, room_name: str) -> Room:
+def ensure_room(db: Session, room_name: str) -> Room:
     name = room_name.strip().lower()
     room = db.execute(select(Room).where(Room.name == name)).scalar_one_or_none()
     if room is None:
@@ -23,7 +16,7 @@ def _ensure_room(db: Session, room_name: str) -> Room:
     return room
 
 
-def _ensure_device(db: Session, device_id: str, room: Room, name: str | None) -> Device:
+def ensure_device(db: Session, device_id: str, room: Room, name: str | None) -> Device:
     did = device_id.strip()
     dev = db.execute(select(Device).where(Device.device_id == did)).scalar_one_or_none()
     if dev is None:
@@ -42,65 +35,9 @@ def _ensure_device(db: Session, device_id: str, room: Room, name: str | None) ->
 
 
 def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
-    room = _ensure_room(db, payload.room)
-    device = _ensure_device(db, payload.device_id, room, payload.device_id)
-    ts = payload.timestamp or datetime.now(timezone.utc)
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+    from services.ingestion_service import complete_ingest
 
-    row = Telemetry(
-        device_id=device.id,
-        room_id=room.id,
-        temperature=payload.temperature,
-        humidity=payload.humidity,
-        motion=payload.motion,
-        light=payload.light,
-        gas=payload.gas,
-        smoke=payload.smoke,
-        timestamp=ts,
-    )
-    device.last_seen = ts
-    device.status = "online"
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-
-    risk = None
-    try:
-        risk = evaluate_telemetry(db, room, device, payload)
-    except Exception:  # noqa: BLE001
-        logger.exception("alert evaluation failed")
-    if risk is None:
-        risk = compute_risk(
-            temperature=payload.temperature,
-            smoke=payload.smoke,
-            gas=payload.gas,
-            motion=payload.motion,
-        )
-
-    reading = TelemetryReading(
-        device_id=device.device_id,
-        room=room.name,
-        temperature=row.temperature,
-        humidity=row.humidity,
-        motion=row.motion,
-        light=row.light,
-        gas=row.gas,
-        smoke=row.smoke,
-        timestamp=row.timestamp,
-        trace_id=payload.trace_id,
-        t_sim=payload.t_sim,
-        risk_score=risk.risk_score,
-        risk_level=risk.risk_level,
-        alert_reasons=risk.alert_reasons,
-    )
-    connection_manager.broadcast(
-        {
-            "type": "telemetry",
-            "payload": reading.model_dump(mode="json"),
-        }
-    )
-    return row
+    return complete_ingest(db, payload)
 
 
 def get_latest_per_device(db: Session) -> list[TelemetryReading]:

@@ -6,7 +6,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
+COPY simulator.py .
 COPY app ./app
 COPY data ./data
 
-CMD ["python", "main.py"]
+CMD ["python", "simulator.py"]

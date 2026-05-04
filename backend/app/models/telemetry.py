@@ -19,6 +19,9 @@ class Telemetry(Base):
     gas: Mapped[float | None] = mapped_column(Float, nullable=True)
     smoke: Mapped[float | None] = mapped_column(Float, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     device: Mapped["Device"] = relationship(back_populates="telemetry_rows")
     room: Mapped["Room"] = relationship()

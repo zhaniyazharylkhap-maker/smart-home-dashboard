@@ -17,6 +17,16 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   mqtt:
     image: eclipse-mosquitto:2
     ports:
@@ -36,6 +46,7 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
       MQTT_TELEMETRY_TOPIC: smarthome/telemetry
+      REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
     ports:
@@ -45,6 +56,8 @@ services:
         condition: service_healthy
       mqtt:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -71,9 +84,8 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
       MQTT_TOPIC: smarthome/telemetry
-      INTERVAL_SEC: "2"
-      SIM_MODE: dataset_replay
-      DATASET_PATH: data/iot_telemetry_data.csv
+      INTERVAL_SEC: "1"
+      JSON_DATASET_PATH: data/sensors_dataset.json
     depends_on:
       - mqtt
 
