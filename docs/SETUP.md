@@ -130,6 +130,30 @@ All producers (simulator or future ESP32) must send JSON like:
 
 Nullable fields are allowed for devices that do not expose every sensor.
 
+## Docker build: `failed to stat parent` / overlayfs snapshot
+
+This comes from **Docker Desktop’s storage** (containerd overlayfs), not from the repo Dockerfiles. Try in order:
+
+1. **Quit Docker Desktop fully** (menu → Quit), wait a few seconds, start it again.
+2. Clear build cache, then rebuild:
+
+   ```bash
+   docker builder prune -af
+   cd docker && docker compose build --no-cache && docker compose up
+   ```
+
+3. If it still fails, use the **legacy builder** (avoids some BuildKit/snapshotter bugs on Mac):
+
+   ```bash
+   cd docker
+   DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose build --no-cache
+   DOCKER_BUILDKIT=0 docker compose up
+   ```
+
+4. **Docker Desktop → Troubleshoot**: “Clean / Purge data” or “Reset to factory defaults” (last resort; removes unused images/containers).
+
+Optional: **Settings → General** — turn off **“Use containerd for pulling and storing images”**, restart Docker, then retry step 2.
+
 ## Makefile shortcuts
 
 From the repo root, `make up` runs Docker Compose in `docker/` (see root `Makefile`).
