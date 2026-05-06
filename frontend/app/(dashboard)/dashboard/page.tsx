@@ -1,11 +1,10 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
   Gauge,
-  Radio,
   RefreshCw,
   Shield,
   Wifi,
@@ -13,7 +12,10 @@ import {
 import { useEffect, useState } from "react";
 
 import { TelemetryReadingCard } from "@/components/telemetry-reading-card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { StatusDot } from "@/components/ui/status-dot";
 import { fetchDashboardStats } from "@/lib/api";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
 import type { DashboardStats } from "@/types/domain";
@@ -22,40 +24,36 @@ import { cn } from "@/lib/utils";
 function Kpi({
   label,
   value,
-  hint,
+  subtext,
   icon: Icon,
-  tone,
+  tone = "safe",
 }: {
   label: string;
   value: string | number;
-  hint?: string;
+  subtext: string;
   icon: React.ComponentType<{ className?: string }>;
-  tone?: "default" | "amber" | "emerald" | "rose";
+  tone?: "safe" | "warning" | "critical";
 }) {
-  const ring =
-    tone === "emerald"
-      ? "border-emerald-500/25 bg-emerald-500/5"
-      : tone === "amber"
-        ? "border-amber-500/25 bg-amber-500/5"
-        : tone === "rose"
-          ? "border-rose-500/25 bg-rose-500/5"
-          : "border-border/70 bg-card/50";
   return (
-    <div className={cn("rounded-2xl border p-4 shadow-sm", ring)}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
-          {hint ? (
-            <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
-          ) : null}
-        </div>
-        <Icon className="h-5 w-5 text-accent opacity-90" />
+    <Card accentLeft={tone} className="p-3 md:p-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <p className="text-[12px] font-light uppercase tracking-wide text-text-dim">
+          {label}
+        </p>
+        <Icon className="h-5 w-5 text-accent" />
       </div>
-    </div>
+      <div className="mb-1">
+        <p className="kpi-value text-[32px] leading-none">{value}</p>
+      </div>
+      <p className="text-xs font-normal text-text-secondary">{subtext}</p>
+    </Card>
   );
+}
+
+function alertTone(level?: string | null) {
+  if (level === "CRITICAL") return "border-l-danger";
+  if (level === "WARNING") return "border-l-amber";
+  return "border-l-accent";
 }
 
 export default function DashboardPage() {
@@ -85,36 +83,37 @@ export default function DashboardPage() {
         ? "Warning"
         : "Safe";
 
+  const statusTone: "safe" | "warning" | "critical" =
+    stats?.home_status === "critical"
+      ? "critical"
+      : stats?.home_status === "warning"
+        ? "warning"
+        : "safe";
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <motion.header
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8 flex flex-col gap-6 border-b border-border/60 pb-8 sm:flex-row sm:items-end sm:justify-between"
-      >
+    <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-            Operations
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Home overview
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Live device telemetry, alert posture, and connectivity — fed by MQTT
-            ingestion and your PostgreSQL history.
+          <h1 className="text-[28px] font-bold">Overview</h1>
+          <p className="text-sm font-light text-text-secondary">
+            Live sensor data and system status
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              "inline-flex min-h-11 items-center gap-2 rounded-pill px-3 py-1.5 text-xs font-medium",
               connected
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-amber-500/40 bg-amber-500/10 text-amber-300"
-            }`}
+                ? "bg-accent-light text-accent"
+                : "bg-amber-light text-amber"
+            )}
           >
-            <Radio className="h-3.5 w-3.5" />
-            {connected ? "WebSocket live" : "Reconnecting…"}
-          </span>
+            <StatusDot
+              status={connected ? "online" : "warning"}
+              pulse={connected}
+            />
+            {connected ? "Live" : "Reconnecting..."}
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -127,128 +126,145 @@ export default function DashboardPage() {
             Refresh
           </Button>
         </div>
-      </motion.header>
+      </header>
 
       {statsError ? (
-        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-3 py-2 text-sm text-amber">
           {statsError}
         </div>
       ) : null}
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
         <Kpi
-          label="Home status"
-          value={stats ? statusLabel : "—"}
-          hint="Derived from active alert severities"
+          label="Home Status"
+          value={stats ? statusLabel : "--"}
+          subtext="Derived from incident severity"
           icon={Shield}
-          tone={
-            stats?.home_status === "critical"
-              ? "rose"
-              : stats?.home_status === "warning"
-                ? "amber"
-                : "emerald"
-          }
+          tone={statusTone}
         />
         <Kpi
-          label="Devices online"
-          value={stats ? `${stats.devices_online}/${stats.devices_total}` : "—"}
-          hint="Seen in the last 2 minutes"
+          label="Devices Online"
+          value={stats ? `${stats.devices_online}/${stats.devices_total}` : "--"}
+          subtext="Seen in the last 2 minutes"
           icon={Wifi}
+          tone="safe"
         />
         <Kpi
-          label="Active alerts"
-          value={stats?.active_alerts ?? "—"}
-          hint="Unresolved incidents"
+          label="Active Alerts"
+          value={stats?.active_alerts ?? "--"}
+          subtext="Unresolved incidents"
           icon={AlertTriangle}
-          tone={
-            stats && stats.active_alerts > 0 ? "amber" : "emerald"
-          }
+          tone={stats && stats.active_alerts > 0 ? "warning" : "safe"}
         />
         <Kpi
-          label="Telemetry streams"
-          value={readings.length}
-          hint="Latest row per device"
-          icon={Activity}
-        />
-        <Kpi
-          label="E2E latency"
+          label="Latency Avg"
           value={
-            latencyStats.latest == null
-              ? "—"
-              : `${Math.round(latencyStats.latest)} ms`
+            latencyStats.avg == null ? "--" : `${Math.round(latencyStats.avg)}ms`
           }
-          hint={
-            latencyStats.avg == null
-              ? "Waiting for traced messages"
-              : `avg ${Math.round(latencyStats.avg)} ms · min ${Math.round(
-                  latencyStats.min ?? latencyStats.avg
-                )} · max ${Math.round(latencyStats.max ?? latencyStats.avg)} · n=${latencyStats.count}`
+          subtext={
+            latencyStats.latest == null
+              ? "Waiting for traced stream"
+              : `latest ${Math.round(latencyStats.latest)}ms`
           }
           icon={Gauge}
+          tone={latencyStats.avg != null && latencyStats.avg > 1200 ? "warning" : "safe"}
         />
-      </div>
+      </section>
 
       {error ? (
-        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-3 py-2 text-sm text-amber">
           {error}
         </div>
       ) : null}
 
-      <section className="mb-8 rounded-2xl border border-border/60 bg-card/40 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Live alert messages</h2>
-          <span className="text-xs text-muted-foreground">
-            {recentAlerts.length} recent
-          </span>
-        </div>
-        {recentAlerts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No live alerts yet. Trigger higher smoke/gas/temperature conditions to
-            see alert messages in real time.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {recentAlerts.map((a) => (
-              <div
-                key={a.id}
-                className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2"
-              >
-                <p className="text-sm font-medium">
-                  {(a.room_name ?? "Unknown room").replace("_", " ")} -{" "}
-                  {a.risk_level ?? a.severity.toUpperCase()}
-                  {typeof a.risk_score === "number"
-                    ? ` (${Math.round(a.risk_score)}/100)`
-                    : ""}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {a.title}
-                  {a.description ? ` - ${a.description}` : ""}
-                </p>
-                {a.alert_reasons && a.alert_reasons.length > 0 ? (
-                  <p className="mt-1 text-xs text-foreground/80">
-                    {a.alert_reasons.join(" · ")}
-                  </p>
-                ) : null}
-              </div>
-            ))}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm text-text-secondary">Live Telemetry Grid</h2>
+            <span className="text-xs font-light text-text-dim">
+              {readings.length} devices
+            </span>
           </div>
-        )}
-      </section>
+          {readings.length === 0 && !error ? (
+            <Card className="p-6 text-center">
+              <CardContent className="p-0">
+                <Activity className="mx-auto mb-2 h-5 w-5 text-text-dim" />
+                <p className="text-sm text-text-secondary">
+                  Waiting for telemetry stream...
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {readings.map((r, i) => (
+                <TelemetryReadingCard key={r.device_id} reading={r} index={i} />
+              ))}
+            </div>
+          )}
+        </div>
 
-      {readings.length === 0 && !error ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 py-24 text-center">
-          <Activity className="mb-4 h-10 w-10 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Waiting for telemetry… start the simulator stack or check MQTT.
-          </p>
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm text-text-secondary">Live Alert Feed</h2>
+            <span className="text-xs font-light text-text-dim">
+              {recentAlerts.length}
+            </span>
+          </div>
+          <Card className="h-full">
+            <CardContent className="p-2 md:p-3">
+              {recentAlerts.length === 0 ? (
+                <p className="py-12 text-center text-sm font-light text-text-dim">
+                  No recent alerts
+                </p>
+              ) : (
+                <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1 lg:max-h-[420px]">
+                  <AnimatePresence initial={false}>
+                    {recentAlerts.map((a) => (
+                      <motion.div
+                        key={a.id}
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={cn(
+                          "rounded-xl border border-border border-l-[3px] bg-surface px-3 py-3",
+                          alertTone(a.risk_level ?? a.severity?.toUpperCase())
+                        )}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="font-display text-[13px] font-medium text-text-primary">
+                            {a.title}
+                          </p>
+                          <Badge
+                            variant={
+                              (a.risk_level ?? a.severity?.toUpperCase()) === "CRITICAL"
+                                ? "danger"
+                                : (a.risk_level ?? a.severity?.toUpperCase()) === "WARNING"
+                                  ? "warning"
+                                  : "success"
+                            }
+                          >
+                            {a.risk_level ?? "safe"}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] font-light text-text-dim">
+                          {(a.room_name ?? "Unknown room").replaceAll("_", " ")} ·{" "}
+                          {new Date(a.created_at).toLocaleTimeString()}
+                        </p>
+                        {a.description ? (
+                          <p className="mt-1 text-xs text-text-secondary">
+                            {a.description}
+                          </p>
+                        ) : null}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
-      ) : (
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {readings.map((r, i) => (
-            <TelemetryReadingCard key={r.device_id} reading={r} index={i} />
-          ))}
-        </div>
-      )}
+      </section>
     </div>
   );
 }

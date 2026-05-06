@@ -2,201 +2,145 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import {
-  Activity,
-  ArrowRight,
-  Bell,
-  Cpu,
-  LineChart,
-  Shield,
-  Sparkles,
-} from "lucide-react";
+import { Activity, Bell, Cpu } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
-import { cn } from "@/lib/utils";
-
-const features = [
+const capabilities = [
   {
-    title: "Realtime telemetry",
-    body: "MQTT ingestion with unified payloads ready for ESP32 swap-in.",
+    title: "Real-time telemetry",
+    description: "Sensor data streamed live to your dashboard",
     icon: Activity,
   },
   {
-    title: "Alert intelligence",
-    body: "Threshold rules with severities, actions, and full audit history.",
+    title: "Instant alerts",
+    description: "Rule-based and anomaly-driven notifications",
     icon: Bell,
   },
   {
-    title: "Live dashboards",
-    body: "WebSocket fan-out so operators see changes instantly.",
-    icon: LineChart,
-  },
-  {
-    title: "Device orchestration",
-    body: "Room-aware modeling for scalable automation and monitoring.",
+    title: "Multi-device",
+    description: "Monitor an entire fleet from a single view",
     icon: Cpu,
   },
 ];
 
-const steps = [
-  { title: "Connect", body: "Devices publish to your broker using one schema." },
-  { title: "Process", body: "FastAPI validates, stores, and evaluates rules." },
-  { title: "Observe", body: "Teams watch KPIs, charts, and incidents in the app." },
-];
-
 export default function LandingPage() {
   return (
-    <div className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_hsl(199_89%_48%_/_0.14),_transparent_55%)]" />
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-surface text-text-primary">
+      <header className="mx-auto flex max-w-7xl items-center justify-between px-4 py-6 md:px-6">
+        <p className="font-display text-xl font-bold text-accent">NEXUS</p>
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 ring-1 ring-accent/30">
-            <Sparkles className="h-5 w-5 text-accent" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Smart Home
-            </p>
-            <p className="text-sm font-semibold">Smart Home Cloud</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
           <Link
             href="/login"
-            className="text-sm text-muted-foreground transition hover:text-foreground"
+            className="inline-flex min-h-11 items-center justify-center rounded-btn px-5 py-2.5 font-display text-sm font-semibold text-text-secondary hover:bg-surface-2 hover:text-text-primary"
           >
             Sign in
           </Link>
           <Link
             href="/register"
-            className={cn(
-              "inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium",
-              "bg-accent text-accent-foreground shadow-lg shadow-accent/20 hover:opacity-95"
-            )}
+            className="inline-flex min-h-11 items-center justify-center rounded-btn border border-accent bg-accent px-5 py-2.5 font-display text-sm font-semibold text-text-on-accent hover:border-accent-hover hover:bg-accent-hover"
           >
-            Create account
+            Get started
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 pb-24 pt-10 sm:px-6 lg:px-8">
-        <section className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          <div>
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/50 px-3 py-1 text-xs text-muted-foreground">
-                <Shield className="h-3.5 w-3.5 text-accent" />
-                Production-style IoT architecture
-              </div>
-              <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl">
-                AI-powered IoT smart home{" "}
-                <span className="text-accent">monitoring</span> platform
-              </h1>
-              <p className="mt-5 max-w-xl text-base text-muted-foreground">
-                Monitor telemetry, orchestrate scenarios, and resolve incidents from a
-                single SaaS-grade control plane — built for graduation demos and
-                ready for real sensors.
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link
-                  href="/register"
-                  className={cn(
-                    "inline-flex items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium",
-                    "bg-accent text-accent-foreground shadow-lg shadow-accent/20 hover:opacity-95"
-                  )}
-                >
-                  Start free
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/login"
-                  className={cn(
-                    "inline-flex items-center justify-center gap-2 rounded-full border border-border bg-transparent px-6 py-2.5 text-sm font-medium hover:bg-muted/60"
-                  )}
-                >
-                  View dashboard
-                </Link>
-              </div>
-            </motion.div>
-          </div>
+      <main className="mx-auto max-w-7xl px-4 pb-16 md:px-6">
+        <section className="px-2 py-14 text-center md:py-[120px]">
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.08 }}
-            className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-card/80 to-background/40 p-6 shadow-2xl"
+            transition={{ duration: 0.2, delay: 0.05 }}
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,_hsl(280_60%_40%_/_0.12),_transparent_40%)]" />
-            <div className="relative space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Dashboard preview
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
-                  <p className="text-xs text-muted-foreground">Home status</p>
-                  <p className="mt-2 text-2xl font-semibold">Safe</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
-                  <p className="text-xs text-muted-foreground">Active alerts</p>
-                  <p className="mt-2 text-2xl font-semibold">0</p>
-                </div>
-                <div className="col-span-2 rounded-2xl border border-border/60 bg-background/30 p-4">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Temperature</span>
-                    <span className="font-mono text-accent">24.6°C</span>
-                  </div>
-                  <div className="mt-3 h-24 rounded-xl bg-gradient-to-r from-accent/20 via-accent/5 to-transparent" />
-                </div>
-              </div>
+            <p className="text-sm font-light uppercase tracking-[0.14em] text-accent">
+              Smart Home Monitoring
+            </p>
+            <h1 className="mx-auto mt-4 max-w-4xl text-[32px] font-bold leading-tight md:text-[48px]">
+              Real-time intelligence for your environment
+            </h1>
+            <p className="mx-auto mt-4 max-w-[520px] text-base font-light text-text-secondary md:text-[18px]">
+              Monitor temperature, motion, humidity and light across every room.
+              Instant alerts when something needs your attention.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link
+                href="/login"
+                className="inline-flex min-h-11 items-center justify-center rounded-btn border-[1.5px] border-accent bg-surface px-5 py-2.5 font-display text-sm font-semibold text-accent hover:bg-accent-light"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/register"
+                className="inline-flex min-h-11 items-center justify-center rounded-btn border border-accent bg-accent px-5 py-2.5 font-display text-sm font-semibold text-text-on-accent hover:border-accent-hover hover:bg-accent-hover"
+              >
+                Create account
+              </Link>
             </div>
           </motion.div>
         </section>
 
-        <section className="mt-20">
-          <h2 className="text-2xl font-semibold">Capabilities</h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Everything you need for a credible smart home SaaS MVP — realtime data,
-            policy, and operator UX.
-          </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {features.map((f, i) => (
+        <section className="grid gap-4 md:grid-cols-3">
+          {capabilities.map((f, i) => (
+            <Card key={f.title} className="text-center">
+              <CardContent className="flex flex-col items-center gap-3">
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.2, delay: i * 0.04 }}
+                >
+                  <f.icon className="h-8 w-8 text-accent" />
+                </motion.div>
+                <h3 className="font-display text-base font-semibold">{f.title}</h3>
+                <p className="text-sm font-light text-text-secondary">
+                  {f.description}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <section className="mt-14">
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              {
+                n: "1",
+                title: "Connect",
+                text: "Attach devices and start secure telemetry streaming.",
+              },
+              {
+                n: "2",
+                title: "Monitor",
+                text: "Track room conditions and trends in real time.",
+              },
+              {
+                n: "3",
+                title: "Act",
+                text: "Resolve alerts quickly with clear risk context.",
+              },
+            ].map((step, i) => (
               <motion.div
-                key={f.title}
-                initial={{ opacity: 0, y: 10 }}
+                key={step.n}
+                initial={{ opacity: 0, y: 8 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.05 }}
-                className="rounded-2xl border border-border/60 bg-card/40 p-5"
+                transition={{ duration: 0.2, delay: i * 0.04 }}
+                className="rounded-card border border-border bg-surface p-6 shadow-card"
               >
-                <f.icon className="h-5 w-5 text-accent" />
-                <h3 className="mt-3 text-sm font-semibold">{f.title}</h3>
-                <p className="mt-2 text-xs text-muted-foreground">{f.body}</p>
+                <p className="font-display text-5xl font-bold text-accent-light">
+                  {step.n}
+                </p>
+                <h3 className="mt-2 font-display text-lg font-semibold">{step.title}</h3>
+                <p className="mt-2 text-sm font-light text-text-secondary">
+                  {step.text}
+                </p>
               </motion.div>
             ))}
           </div>
         </section>
-
-        <section className="mt-20">
-          <h2 className="text-2xl font-semibold">How it works</h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {steps.map((s, idx) => (
-              <div
-                key={s.title}
-                className="rounded-2xl border border-border/60 bg-card/30 p-6"
-              >
-                <p className="text-xs font-semibold text-accent">0{idx + 1}</p>
-                <h3 className="mt-2 text-lg font-semibold">{s.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
       </main>
 
-      <footer className="border-t border-border/60 py-10 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} Smart Home Cloud. Built for IoT telemetry graduation projects.
+      <footer className="pb-8 pt-4 text-center text-xs font-light text-text-dim">
+        Nexus Smart Home Platform
       </footer>
     </div>
   );

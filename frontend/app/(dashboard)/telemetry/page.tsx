@@ -1,11 +1,9 @@
 "use client";
 
-import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -13,9 +11,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, AlertTriangle, ShieldAlert, Thermometer, Wifi } from "lucide-react";
+import { AlertTriangle, ChevronDown, Filter, ShieldAlert, Thermometer, Wifi } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   fetchAlerts,
   fetchDashboardStats,
@@ -53,12 +52,12 @@ const RANGES = [
 ] as const;
 
 const METRIC_COLORS: Record<MetricKey, string> = {
-  temperature: "hsl(12 90% 62%)",
-  humidity: "hsl(199 89% 58%)",
-  gas: "hsl(40 95% 58%)",
-  smoke: "hsl(0 85% 62%)",
-  motion: "hsl(268 80% 66%)",
-  light: "hsl(52 92% 62%)",
+  temperature: "#16a34a",
+  humidity: "#3b82f6",
+  gas: "#d97706",
+  smoke: "#dc2626",
+  motion: "#8b5cf6",
+  light: "#f59e0b",
 };
 
 function metricLabel(metric: MetricKey): string {
@@ -69,16 +68,7 @@ function metricUnit(metric: MetricKey): string {
   return METRICS.find((m) => m.id === metric)?.unit ?? "";
 }
 
-function getTemperatureColor(v: number | null): string {
-  if (v == null) return "hsl(215 20% 65%)";
-  if (v < 18) return "hsl(206 90% 62%)";
-  if (v <= 25) return "hsl(145 70% 48%)";
-  if (v <= 30) return "hsl(35 92% 58%)";
-  return "hsl(0 85% 62%)";
-}
-
-function metricStroke(metric: MetricKey, latest: number | null): string {
-  if (metric === "temperature") return getTemperatureColor(latest);
+function metricStroke(metric: MetricKey): string {
   return METRIC_COLORS[metric];
 }
 
@@ -87,50 +77,7 @@ function fmt(value: number | null | undefined, digits = 1): string {
   return value.toFixed(digits);
 }
 
-function riskTone(level: string | null | undefined): string {
-  if (level === "CRITICAL") return "bg-rose-500/15 text-rose-300 border-rose-500/40";
-  if (level === "WARNING") return "bg-amber-500/15 text-amber-200 border-amber-500/40";
-  return "bg-emerald-500/15 text-emerald-300 border-emerald-500/40";
-}
-
-function KpiBlock({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone?: "default" | "good" | "warn" | "bad";
-}) {
-  const toneClass =
-    tone === "good"
-      ? "border-emerald-500/25 bg-emerald-500/5"
-      : tone === "warn"
-        ? "border-amber-500/25 bg-amber-500/5"
-        : tone === "bad"
-          ? "border-rose-500/25 bg-rose-500/5"
-          : "border-border/60 bg-card/40";
-  return (
-    <div className={cn("rounded-2xl border p-4", toneClass)}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
-          {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
-        </div>
-        <Icon className="h-4 w-4 text-accent" />
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({
+function SparkMetricCard({
   metric,
   latest,
   points,
@@ -139,15 +86,15 @@ function MetricCard({
   latest: number | null;
   points: { t: string; v: number | null }[];
 }) {
-  const stroke = metricStroke(metric, latest);
+  const stroke = metricStroke(metric);
   const label = metricLabel(metric);
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/35 p-4 transition hover:border-accent/35 hover:shadow-glow">
+    <Card className="min-w-[180px] p-3">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className="text-xs font-light text-text-dim">{label}</p>
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: stroke }} />
       </div>
-      <p className="mb-2 text-2xl font-semibold tabular-nums" style={{ color: stroke }}>
+      <p className="kpi-value mb-2 text-2xl text-text-primary" style={{ color: stroke }}>
         {metric === "motion"
           ? latest == null
             ? "—"
@@ -156,29 +103,25 @@ function MetricCard({
               : "Clear"
           : `${fmt(latest)} ${metricUnit(metric)}`}
       </p>
-      <div className="h-16">
+      <div className="h-12">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
+          <LineChart
             data={points.map((p) => ({
-              t: new Date(p.t).toLocaleTimeString(),
+              t: new Date(p.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
               v: p.v,
             }))}
           >
-            <Area
+            <Line
               type="monotone"
               dataKey="v"
               stroke={stroke}
-              fill={stroke}
-              fillOpacity={0.14}
-              strokeWidth={2}
-              isAnimationActive
-              animationDuration={450}
+              strokeWidth={1.8}
               dot={false}
             />
-          </AreaChart>
+          </LineChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -202,6 +145,7 @@ export default function TelemetryPage() {
   const [devicesOnline, setDevicesOnline] = useState<string>("—");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -309,70 +253,73 @@ export default function TelemetryPage() {
   }, [histories]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-          Analytics
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Telemetry</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Time-series from PostgreSQL, filtered by room and device. Metrics follow
-          the unified sensor schema.
+    <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
+      <div className="mb-4">
+        <h1 className="text-[28px] font-bold">Telemetry</h1>
+        <p className="text-sm font-light text-text-secondary">
+          Historical and real-time sensor analytics
         </p>
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiBlock
-          label="Current temperature"
-          value={`${fmt(latestByMetric.temperature)} degC`}
-          hint={room ? room.replace("_", " ") : "Across current filters"}
-          icon={Thermometer}
-          tone={
-            (latestByMetric.temperature ?? 0) > 30
-              ? "bad"
-              : (latestByMetric.temperature ?? 0) > 25
-                ? "warn"
-                : "good"
-          }
-        />
-        <KpiBlock
-          label="Risk level"
-          value={topReading?.risk_level ?? "SAFE"}
-          hint={
-            topReading?.risk_score == null
-              ? "No risk score yet"
-              : `score ${Math.round(topReading.risk_score)}/100`
-          }
-          icon={ShieldAlert}
-          tone={
-            topReading?.risk_level === "CRITICAL"
-              ? "bad"
-              : topReading?.risk_level === "WARNING"
-                ? "warn"
-                : "good"
-          }
-        />
-        <KpiBlock
-          label="Active alerts"
-          value={String(activeAlerts)}
-          hint="Unresolved incidents"
-          icon={AlertTriangle}
-          tone={activeAlerts > 0 ? "warn" : "good"}
-        />
-        <KpiBlock
-          label="Devices online"
-          value={devicesOnline}
-          hint="Live device health"
-          icon={Wifi}
-        />
+      <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+          <Thermometer className="h-4 w-4 text-accent" />
+          <span className="text-xs font-light text-text-secondary">Current temp</span>
+          <span className="font-display text-sm font-semibold text-text-primary">
+            {fmt(latestByMetric.temperature)} degC
+          </span>
+        </div>
+        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+          <ShieldAlert className="h-4 w-4 text-accent" />
+          <span className="text-xs font-light text-text-secondary">Risk level</span>
+          <span className="font-display text-sm font-semibold text-text-primary">
+            {topReading?.risk_level ?? "SAFE"}
+          </span>
+        </div>
+        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+          <AlertTriangle className="h-4 w-4 text-amber" />
+          <span className="text-xs font-light text-text-secondary">Alerts</span>
+          <span className="font-display text-sm font-semibold text-text-primary">
+            {activeAlerts}
+          </span>
+        </div>
+        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+          <Wifi className="h-4 w-4 text-accent" />
+          <span className="text-xs font-light text-text-secondary">Devices</span>
+          <span className="font-display text-sm font-semibold text-text-primary">
+            {devicesOnline}
+          </span>
+        </div>
       </div>
 
-      <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/40 p-4 backdrop-blur-sm lg:flex-row lg:items-end lg:justify-between">
-        <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <label className="text-xs font-medium text-muted-foreground">
+      <div className="mb-4 md:hidden">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full justify-between"
+          onClick={() => setMobileFiltersOpen((v) => !v)}
+        >
+          <span className="inline-flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Filters
+          </span>
+          <ChevronDown
+            className={cn("h-4 w-4 transition-transform", mobileFiltersOpen && "rotate-180")}
+          />
+        </Button>
+      </div>
+
+      <div
+        className={cn(
+          "mb-4 rounded-card border border-border bg-surface p-4 shadow-card",
+          !mobileFiltersOpen && "hidden md:block"
+        )}
+      >
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <label className="text-xs text-text-secondary">
             Room
             <select
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
               value={room}
               onChange={(e) => setRoom(e.target.value)}
             >
@@ -384,10 +331,10 @@ export default function TelemetryPage() {
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-muted-foreground">
+          <label className="text-xs text-text-secondary">
             Device
             <select
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
             >
@@ -399,10 +346,10 @@ export default function TelemetryPage() {
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-muted-foreground">
+          <label className="text-xs text-text-secondary">
             Chart mode
             <select
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
               value={viewMode}
               onChange={(e) => setViewMode(e.target.value as "multi" | "single")}
             >
@@ -411,10 +358,10 @@ export default function TelemetryPage() {
             </select>
           </label>
           {viewMode === "single" ? (
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="text-xs text-text-secondary">
               Metric
               <select
-                className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+                className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
                 value={singleMetric}
                 onChange={(e) => setSingleMetric(e.target.value as MetricKey)}
               >
@@ -426,136 +373,155 @@ export default function TelemetryPage() {
               </select>
             </label>
           ) : null}
-          <label className="text-xs font-medium text-muted-foreground">
+          <div className="lg:col-span-2">
+            <p className="mb-1 text-xs text-text-secondary">Metrics</p>
+            <div className="flex flex-wrap gap-1.5">
+              {METRICS.map((m) => {
+                const active = selectedMetrics.includes(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() =>
+                      setSelectedMetrics((prev) => {
+                        if (viewMode === "single") return prev;
+                        if (prev.includes(m.id)) {
+                          if (prev.length === 1) return prev;
+                          return prev.filter((x) => x !== m.id);
+                        }
+                        return [...prev, m.id];
+                      })
+                    }
+                    disabled={viewMode === "single"}
+                    className={cn(
+                      "min-h-11 rounded-btn border px-2.5 text-xs font-body transition",
+                      active
+                        ? "border-accent text-accent"
+                        : "border-border text-text-secondary hover:bg-surface-2",
+                      viewMode === "single" && "opacity-50"
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <label className="text-xs text-text-secondary">
             Window
-            <select
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-              value={range}
-              onChange={(e) => setRange(e.target.value)}
-            >
+            <div className="mt-1 flex gap-1.5">
               {RANGES.map((r) => (
-                <option key={r.id} value={r.id}>
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setRange(r.id)}
+                  className={cn(
+                    "min-h-11 rounded-lg border px-2 text-xs font-body",
+                    range === r.id
+                      ? "border-accent bg-accent text-white"
+                      : "border-border text-text-secondary hover:bg-surface-2"
+                  )}
+                >
                   {r.label}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
           </label>
+          <div className="flex items-end">
+            <Button type="button" onClick={() => void load()} disabled={loading} className="w-full">
+              {loading ? "Loading..." : "Reload"}
+            </Button>
+          </div>
         </div>
-        <Button type="button" onClick={() => void load()} disabled={loading}>
-          {loading ? "Loading…" : "Reload"}
-        </Button>
       </div>
 
-      {viewMode === "multi" ? (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {METRICS.map((m) => {
-            const active = selectedMetrics.includes(m.id);
-            const color = metricStroke(m.id, latestByMetric[m.id]);
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() =>
-                  setSelectedMetrics((prev) => {
-                    if (prev.includes(m.id)) {
-                      if (prev.length === 1) return prev;
-                      return prev.filter((x) => x !== m.id);
-                    }
-                    return [...prev, m.id];
-                  })
-                }
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs transition",
-                  active
-                    ? "border-border bg-muted/60 text-foreground"
-                    : "border-border/60 bg-card/40 text-muted-foreground hover:bg-muted/30"
-                )}
-                style={active ? { boxShadow: `inset 0 0 0 1px ${color}` } : undefined}
-              >
-                {m.label}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
       {err ? (
-        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-amber">
           {err}
         </div>
       ) : null}
 
-      <div className={cn("mb-6 h-[420px] rounded-2xl border border-border/60 bg-card/30 p-4")}>
+      <Card className="mb-4 p-3 md:p-4">
         {loading ? (
-          <div className="flex h-full animate-pulse items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-[200px] animate-pulse items-center justify-center text-sm text-text-secondary md:h-[280px]">
             Loading telemetry analytics...
           </div>
         ) : chartData.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-[200px] items-center justify-center text-sm text-text-secondary md:h-[280px]">
             No points in this window yet — generate telemetry from the simulator.
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid stroke="hsl(217 33% 17%)" strokeDasharray="3 3" />
-              <XAxis
-                dataKey="tLabel"
-                tick={{ fill: "hsl(215 20% 65%)", fontSize: 11 }}
-                minTickGap={28}
-              />
-              <YAxis tick={{ fill: "hsl(215 20% 65%)", fontSize: 11 }} />
-              <Tooltip
-                formatter={(value: unknown, name: unknown) => {
-                  const key = String(name) as MetricKey;
-                  const numeric = typeof value === "number" ? value : null;
-                  if (value == null) return ["—", metricLabel(key)];
-                  if (key === "motion")
-                    return [numeric != null && numeric >= 0.5 ? "Detected" : "Clear", metricLabel(key)];
-                  return [
-                    numeric == null ? "—" : `${numeric.toFixed(2)} ${metricUnit(key)}`,
-                    metricLabel(key),
-                  ];
-                }}
-                contentStyle={{
-                  background: "hsl(222 40% 9%)",
-                  border: "1px solid hsl(217 33% 17%)",
-                  borderRadius: 12,
-                }}
-              />
-              {chartMetrics.map((m) => (
-                <Line
-                  key={m}
-                  type="monotone"
-                  dataKey={m}
-                  name={m}
-                  stroke={metricStroke(m, latestByMetric[m])}
-                  strokeWidth={2.2}
-                  dot={false}
-                  isAnimationActive
-                  animationDuration={500}
+          <div className="h-[200px] md:h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#d4e6d4" />
+                <XAxis
+                  dataKey="tLabel"
+                  stroke="#9ca3af"
+                  tick={{
+                    fill: "#9ca3af",
+                    fontFamily: "Inter",
+                    fontSize: 11,
+                  }}
+                  minTickGap={28}
                 />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+                <YAxis
+                  stroke="#9ca3af"
+                  tick={{
+                    fill: "#9ca3af",
+                    fontFamily: "Inter",
+                    fontSize: 11,
+                  }}
+                />
+                <Tooltip
+                  formatter={(value: unknown, name: unknown) => {
+                    const key = String(name) as MetricKey;
+                    const numeric = typeof value === "number" ? value : null;
+                    if (value == null) return ["—", metricLabel(key)];
+                    if (key === "motion")
+                      return [numeric != null && numeric >= 0.5 ? "Detected" : "Clear", metricLabel(key)];
+                    return [
+                      numeric == null ? "—" : `${numeric.toFixed(2)} ${metricUnit(key)}`,
+                      metricLabel(key),
+                    ];
+                  }}
+                  contentStyle={{
+                    background: "#ffffff",
+                    border: "1px solid #d4e6d4",
+                    borderRadius: "12px",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                    color: "#111827",
+                    fontFamily: "Inter",
+                    fontSize: 12,
+                  }}
+                />
+                <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 12 }} />
+                {chartMetrics.map((m) => (
+                  <Line
+                    key={m}
+                    type="monotone"
+                    dataKey={m}
+                    name={m}
+                    stroke={metricStroke(m)}
+                    strokeWidth={2.2}
+                    dot={false}
+                    isAnimationActive
+                    animationDuration={500}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         )}
-      </div>
+      </Card>
 
-      <div className="mb-6 flex items-center gap-2 text-xs">
-        <span className="relative inline-flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-        </span>
-        <span className="text-muted-foreground">Live telemetry stream active</span>
-        {topReading?.risk_level ? (
-          <span className={cn("ml-2 rounded-full border px-2 py-0.5", riskTone(topReading.risk_level))}>
-            {topReading.risk_level}
-          </span>
-        ) : null}
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm text-text-secondary">Sparkline Strip</h2>
+        <span className="text-xs font-light text-text-dim">5 metrics</span>
       </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="flex gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-3 lg:grid-cols-5">
         {CARD_METRICS.map((m) => (
-          <MetricCard
+          <SparkMetricCard
             key={m}
             metric={m}
             latest={latestByMetric[m]}

@@ -5,21 +5,39 @@ import { motion } from "framer-motion";
 import {
   Activity,
   Droplets,
-  Flame,
   Lightbulb,
-  Radio,
   Thermometer,
-  Wind,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusDot } from "@/components/ui/status-dot";
 import type { TelemetryReading } from "@/types/telemetry";
-import { cn } from "@/lib/utils";
 
-function riskTone(level?: string | null) {
-  if (level === "CRITICAL") return "border-rose-500/30 bg-rose-500/10 text-rose-300";
-  if (level === "WARNING") return "border-amber-500/30 bg-amber-500/10 text-amber-200";
-  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+function riskTone(level?: string | null): {
+  accentLeft: "safe" | "warning" | "critical";
+  badgeVariant: "success" | "warning" | "danger";
+  label: string;
+} {
+  if (level === "CRITICAL") {
+    return {
+      accentLeft: "critical",
+      badgeVariant: "danger",
+      label: "Critical",
+    };
+  }
+  if (level === "WARNING") {
+    return {
+      accentLeft: "warning",
+      badgeVariant: "warning",
+      label: "Warning",
+    };
+  }
+  return {
+    accentLeft: "safe",
+    badgeVariant: "success",
+    label: "Safe",
+  };
 }
 
 function Metric({
@@ -27,33 +45,28 @@ function Metric({
   label,
   value,
   unit,
-  accent,
 }: {
   icon: LucideIcon;
   label: string;
-  value: string;
+  value: string | number;
   unit?: string;
-  accent?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-xl bg-muted/40 px-3 py-2.5",
-        accent
-      )}
-    >
-      <Icon className="h-4 w-4 shrink-0 text-accent opacity-90" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="rounded-xl border border-border bg-surface-2 px-3 py-2.5">
+      <div className="mb-1.5 flex items-center gap-2 text-text-secondary">
+        <Icon className="h-5 w-5 shrink-0 text-text-dim" />
+        <p className="text-[11px] font-light uppercase tracking-wide">
           {label}
         </p>
-        <p className="truncate font-mono text-sm tabular-nums text-foreground">
-          {value}
-          {unit ? (
-            <span className="ml-1 text-xs text-muted-foreground">{unit}</span>
-          ) : null}
-        </p>
       </div>
+      <p className="kpi-value text-xl leading-none text-text-primary">
+        {value}
+        {unit ? (
+          <span className="ml-1 font-body text-[11px] font-light text-text-dim">
+            {unit}
+          </span>
+        ) : null}
+      </p>
     </div>
   );
 }
@@ -65,8 +78,16 @@ export function TelemetryReadingCard({
   reading: TelemetryReading;
   index: number;
 }) {
-  const motionVal = (v: number | null | undefined, suffix: string) =>
-    v == null ? "—" : `${v}${suffix}`;
+  const formatNumber = (v: number | null | undefined) =>
+    v == null ? "—" : Number(v.toFixed(1));
+  const isRecent = Date.now() - new Date(reading.timestamp).getTime() < 30_000;
+  const updatedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(reading.timestamp).getTime()) / 1000)
+  );
+  const risk = riskTone(reading.risk_level);
+  const motionValue =
+    reading.motion == null ? "—" : reading.motion ? "On" : "Off";
 
   return (
     <motion.div
@@ -74,83 +95,58 @@ export function TelemetryReadingCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: index * 0.05 }}
     >
-      <Card className="overflow-hidden border-border/60 transition hover:border-accent/40 hover:shadow-glow">
-        <CardHeader className="pb-3">
+      <Card
+        accentLeft={risk.accentLeft}
+        className="overflow-hidden"
+      >
+        <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-base font-semibold">
-                {reading.room.replace("_", " ")}
-              </CardTitle>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {reading.device_id}
-              </p>
+            <div className="flex items-center gap-2">
+              <StatusDot status={isRecent ? "online" : "offline"} pulse={isRecent} />
+              <div>
+                <CardTitle className="text-sm font-semibold">
+                  {reading.device_id}
+                </CardTitle>
+                <p className="text-xs font-light text-text-secondary">
+                  {reading.room.replaceAll("_", " ")}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
-                <Radio className="h-3 w-3" />
-                Live
-              </span>
-              <span
-                className={cn(
-                  "inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                  riskTone(reading.risk_level)
-                )}
-              >
-                {reading.risk_level ?? "SAFE"} ·{" "}
-                {reading.risk_score == null ? "—" : Math.round(reading.risk_score)}
+            <div className="flex items-center gap-2">
+              <Badge variant={risk.badgeVariant}>{risk.label}</Badge>
+              <span className="kpi-value text-sm text-text-dim">
+                {reading.risk_score == null
+                  ? "--"
+                  : Math.round(reading.risk_score)}
               </span>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-2 sm:grid-cols-2">
+
+        <CardContent className="grid grid-cols-2 gap-2">
           <Metric
             icon={Thermometer}
-            label="Temperature"
-            value={motionVal(reading.temperature, "")}
+            label="Temp"
+            value={formatNumber(reading.temperature)}
             unit="°C"
           />
           <Metric
             icon={Droplets}
             label="Humidity"
-            value={motionVal(reading.humidity, "")}
+            value={formatNumber(reading.humidity)}
             unit="%"
           />
-          <Metric
-            icon={Activity}
-            label="Motion"
-            value={
-              reading.motion == null ? "—" : reading.motion ? "Detected" : "Clear"
-            }
-          />
+          <Metric icon={Activity} label="Motion" value={motionValue} />
           <Metric
             icon={Lightbulb}
             label="Light"
-            value={motionVal(reading.light, "")}
+            value={formatNumber(reading.light)}
             unit="lux"
           />
-          <Metric
-            icon={Wind}
-            label="Gas"
-            value={motionVal(reading.gas, "")}
-            unit="ppm"
-          />
-          <Metric
-            icon={Flame}
-            label="Smoke"
-            value={motionVal(reading.smoke, "")}
-            unit="ppm"
-          />
         </CardContent>
-        <div className="border-t border-border/50 px-6 py-3 text-[11px] text-muted-foreground">
-          {reading.alert_reasons && reading.alert_reasons.length > 0 ? (
-            <p className="mb-1 line-clamp-2 text-foreground/80">
-              {reading.alert_reasons.join(" · ")}
-            </p>
-          ) : null}
-          Updated{" "}
-          <span className="font-mono text-foreground/90">
-            {new Date(reading.timestamp).toLocaleString()}
-          </span>
+
+        <div className="border-t border-border px-6 py-2 text-[11px] font-light text-text-dim">
+          Updated {updatedSeconds}s ago
         </div>
       </Card>
     </motion.div>

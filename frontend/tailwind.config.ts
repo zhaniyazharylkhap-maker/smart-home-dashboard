@@ -10,28 +10,33 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
+        bg: "#f8faf8",
+        surface: "#ffffff",
+        "surface-2": "#f0f5f0",
+        border: "#d4e6d4",
+        accent: "#16a34a",
+        "accent-hover": "#15803d",
+        "accent-light": "#dcfce7",
+        "accent-mid": "#86efac",
+        amber: "#d97706",
+        "amber-light": "#fef3c7",
+        danger: "#dc2626",
+        "danger-light": "#fee2e2",
+        "text-primary": "#111827",
+        "text-secondary": "#4b5563",
+        "text-dim": "#9ca3af",
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        mono: ["ui-monospace", "monospace"],
+        display: ["Montserrat", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+      },
+      borderRadius: {
+        card: "16px",
+        btn: "10px",
+        pill: "999px",
       },
       boxShadow: {
-        glow: "0 0 60px -12px hsl(199 89% 48% / 0.35)",
+        card: "0 1px 4px rgba(0,0,0,0.06), 0 0 0 1px #d4e6d4",
       },
     },
   },

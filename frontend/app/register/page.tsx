@@ -49,56 +49,63 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-3xl border border-border/60 bg-card/50 p-8 shadow-2xl backdrop-blur-xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-          Get started
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold">Create account</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Password must be at least 8 characters.
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+      <div className="w-full max-w-[400px] rounded-card border border-border bg-surface p-6 shadow-card">
+        <h1 className="text-center font-display text-[28px] font-bold text-accent">
+          NEXUS
+        </h1>
+        <p className="mt-1 text-center text-sm font-light text-text-secondary">
+          Create your account
         </p>
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
-          <label className="block text-xs font-medium text-muted-foreground">
-            Name
+          <label className="block text-xs font-normal text-text-secondary">
+            Full name
             <input
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
             />
           </label>
-          <label className="block text-xs font-medium text-muted-foreground">
+          <label className="block text-xs font-normal text-text-secondary">
             Email
             <input
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
               required
             />
           </label>
-          <label className="block text-xs font-medium text-muted-foreground">
+          <label className="block text-xs font-normal text-text-secondary">
             Password
             <input
-              className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
               minLength={8}
               required
             />
+            <p
+              className={`mt-1 text-[11px] font-light ${
+                password.length >= 8 ? "text-accent" : "text-text-dim"
+              }`}
+            >
+              Minimum 8 characters
+            </p>
           </label>
           {error ? (
-            <p className="text-sm text-rose-300">{error}</p>
+            <p className="text-sm text-danger">{error}</p>
           ) : null}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Creating…" : "Create account"}
+          <Button type="submit" variant="primary" className="w-full" disabled={loading}>
+            {loading ? "Creating..." : "Create account"}
           </Button>
         </form>
-        <p className="mt-6 text-center text-sm text-muted-foreground">
+
+        <p className="mt-4 text-center text-sm font-light text-text-secondary">
           Already have an account?{" "}
-          <Link href="/login" className="text-accent hover:underline">
+          <Link href="/login" className="text-accent hover:text-accent-dim">
             Sign in
           </Link>
         </p>
