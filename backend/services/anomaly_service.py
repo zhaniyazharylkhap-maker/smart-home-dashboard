@@ -84,25 +84,30 @@ def _score_device(db: Session, device: Device, model: object | None) -> float:
         return 0.0
 
 
+def _run_anomaly_iteration() -> None:
+    model = _load_model()
+    settings = get_settings()
+    db = SessionLocal()
+    try:
+        devs = list(db.execute(select(Device)).scalars().all())
+        for device in devs:
+            score = _score_device(db, device, model)
+            if score <= settings.anomaly_score_threshold:
+                continue
+            room = db.get(Room, device.room_id)
+            if room is None:
+                continue
+            emit_anomaly_alert(db, room, device, score)
+    finally:
+        db.close()
+
+
 async def anomaly_background_loop(interval_sec: float = 10.0) -> None:
     while True:
         try:
             await asyncio.sleep(interval_sec)
-            model = _load_model()
-            settings = get_settings()
-            db = SessionLocal()
-            try:
-                devs = list(db.execute(select(Device)).scalars().all())
-                for device in devs:
-                    score = _score_device(db, device, model)
-                    if score <= settings.anomaly_score_threshold:
-                        continue
-                    room = db.get(Room, device.room_id)
-                    if room is None:
-                        continue
-                    emit_anomaly_alert(db, room, device, score)
-            finally:
-                db.close()
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _run_anomaly_iteration)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001

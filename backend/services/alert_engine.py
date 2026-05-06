@@ -9,17 +9,36 @@ from sqlalchemy.orm import Session
 
 from app.models import Alert, Device, Room, Threshold
 from app.schemas.telemetry import TelemetryIngest
-from app.services.risk_engine import RiskResult, compute_risk
+from services.risk_engine import RiskResult, compute_risk
 from core.config import get_settings
-from core.redis_client import publish
+from core.redis_client import get_redis, publish
 
 if TYPE_CHECKING:
     pass
 
 _humidity_high_since: dict[int, datetime] = {}
+_THRESHOLD_CACHE_TTL_SECONDS = 60
 
 
-def _effective_thresholds(db: Session, room_id: int) -> Threshold:
+def _effective_thresholds(db: Session, room_id: int, device_id: int) -> Threshold:
+    cache_key = f"thresholds:{device_id}"
+    try:
+        cached_raw = get_redis().get(cache_key)
+        if cached_raw:
+            cached = json.loads(cached_raw)
+            return Threshold(
+                room_id=room_id,
+                temperature_max=cached.get("temperature_max"),
+                gas_max=cached.get("gas_max"),
+                smoke_max=cached.get("smoke_max"),
+                humidity_min=cached.get("humidity_min"),
+                humidity_max=cached.get("humidity_max"),
+                offline_after_minutes=cached.get("offline_after_minutes"),
+                motion_light_combo_max=cached.get("motion_light_combo_max"),
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
     settings = get_settings()
     global_row = db.execute(
         select(Threshold).where(Threshold.room_id.is_(None))
@@ -63,6 +82,24 @@ def _effective_thresholds(db: Session, room_id: int) -> Threshold:
             v = getattr(room_row, attr)
             if v is not None:
                 setattr(merged, attr, v)
+    try:
+        get_redis().setex(
+            cache_key,
+            _THRESHOLD_CACHE_TTL_SECONDS,
+            json.dumps(
+                {
+                    "temperature_max": merged.temperature_max,
+                    "gas_max": merged.gas_max,
+                    "smoke_max": merged.smoke_max,
+                    "humidity_min": merged.humidity_min,
+                    "humidity_max": merged.humidity_max,
+                    "offline_after_minutes": merged.offline_after_minutes,
+                    "motion_light_combo_max": merged.motion_light_combo_max,
+                }
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return merged
 
 
@@ -178,7 +215,7 @@ def _apply_rules(
     device: Device,
     payload: TelemetryIngest,
 ) -> list[Alert]:
-    th = _effective_thresholds(db, room.id)
+    th = _effective_thresholds(db, room.id, device.id)
     settings = get_settings()
     hour = datetime.now(timezone.utc).hour
     night = hour >= 22 or hour < 6

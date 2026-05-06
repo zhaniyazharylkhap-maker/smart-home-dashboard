@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
-from app.services.risk_engine import compute_risk
+from services.risk_engine import compute_risk
 from app.services.telemetry_service import ensure_device, ensure_room
 from core.redis_client import publish
 from services.alert_engine import evaluate_telemetry

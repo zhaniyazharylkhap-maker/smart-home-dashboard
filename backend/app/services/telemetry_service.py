@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
-from app.services.risk_engine import compute_risk
+from services.risk_engine import compute_risk
 
 
 def ensure_room(db: Session, room_name: str) -> Room:
