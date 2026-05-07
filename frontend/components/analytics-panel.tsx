@@ -37,9 +37,18 @@ function normalize01(values: number[]): { min: number; max: number } {
 
 function colorFrom01(v: number): string {
   const clamped = Math.max(0, Math.min(1, v));
-  const red = Math.round(255 * clamped);
-  const green = Math.round(180 * (1 - clamped) + 50);
-  return `rgba(${red},${green},80,0.85)`;
+  if (clamped <= 0.5) {
+    const t = clamped / 0.5;
+    const red = Math.round(46 + (250 - 46) * t);
+    const green = Math.round(204 + (204 - 204) * t);
+    const blue = Math.round(113 + (21 - 113) * t);
+    return `rgba(${red},${green},${blue},0.9)`;
+  }
+  const t = (clamped - 0.5) / 0.5;
+  const red = Math.round(250 + (239 - 250) * t);
+  const green = Math.round(204 + (68 - 204) * t);
+  const blue = Math.round(21 + (68 - 21) * t);
+  return `rgba(${red},${green},${blue},0.92)`;
 }
 
 function normalizeHeatValue(value: number, min: number, max: number): number {
@@ -96,6 +105,13 @@ export function AnalyticsPanel({
     }
     return Array.from(byKey.values());
   }, [timeline]);
+  const heatLookup = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const cell of heatRows) {
+      map.set(`${cell.source}__${cell.bucket}`, cell.score);
+    }
+    return map;
+  }, [heatRows]);
 
   const heatBuckets = useMemo(
     () => Array.from(new Set(heatRows.map((x) => x.bucket))).sort(),
@@ -138,14 +154,16 @@ export function AnalyticsPanel({
   }, [compareA, compareB, deviceOptions, timeline]);
 
   return (
-    <section className="mt-4 grid gap-4 lg:grid-cols-2">
-      <Card className="lg:col-span-2">
-        <CardContent className="p-4">
-          <h3 className="mb-2 text-sm text-text-secondary">Temperature with anomaly overlay</h3>
-          <p className="mb-2 text-xs text-text-dim">
+    <section className="grid gap-4 lg:grid-cols-2">
+      <Card className="border-border/60 bg-slate-900/70 lg:col-span-2">
+        <CardContent className="p-4 md:p-5">
+          <h3 className="mb-1 text-xs uppercase tracking-wide text-slate-400">
+            Anomaly Overlay
+          </h3>
+          <p className="mb-2 text-xs text-slate-500">
             Live analytical layer across {readings.length} active devices.
           </p>
-          <p className="mb-2 text-xs text-text-dim">
+          <p className="mb-3 text-xs text-slate-500">
             {/* Threshold display improves interpretability of anomaly decisions. */}
             Threshold: {anomalyThreshold.toFixed(2)}{" "}
             {anomalyThresholdDynamic ? "(dynamic)" : "(fallback)"}
@@ -153,10 +171,19 @@ export function AnalyticsPanel({
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={baseSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d4e6d4" />
-                <XAxis dataKey="tLabel" minTickGap={24} />
-                <YAxis />
+                <CartesianGrid strokeDasharray="2 6" stroke="#334155" />
+                <XAxis
+                  dataKey="tLabel"
+                  minTickGap={24}
+                  stroke="#94a3b8"
+                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                />
+                <YAxis stroke="#94a3b8" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <Tooltip
+                  labelFormatter={(_, payload) => {
+                    const row = payload?.[0]?.payload as { t?: string } | undefined;
+                    return row?.t ? new Date(row.t).toLocaleString() : "";
+                  }}
                   formatter={(value, name, item) => {
                     const row = item.payload as {
                       risk: number;
@@ -170,20 +197,36 @@ export function AnalyticsPanel({
                     }
                     return [value, "Temperature"];
                   }}
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: "8px",
+                    color: "#e2e8f0",
+                    fontSize: 12,
+                  }}
                 />
-                <Legend />
-                <Line type="monotone" dataKey="value" stroke="#16a34a" dot={false} name="Temperature" />
-                <Scatter dataKey="anomaly" fill="#dc2626" name="anomaly" />
+                <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="bottom" />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#38bdf8"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Temperature"
+                />
+                <Scatter dataKey="anomaly" fill="#ef4444" name="Anomaly" />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-4">
-          <h3 className="mb-2 text-sm text-text-secondary">Risk heatmap (time x room/device)</h3>
-          <p className="mb-3 text-xs text-text-dim">
+      <Card className="border-border/60 bg-slate-900/70">
+        <CardContent className="p-4 md:p-5">
+          <h3 className="mb-1 text-xs uppercase tracking-wide text-slate-400">
+            Risk Heatmap (Hour x Room/Device)
+          </h3>
+          <p className="mb-3 text-xs text-slate-500">
             Buckets with warmer colors indicate concentrated high-risk periods.
           </p>
           <div className="overflow-x-auto">
@@ -193,24 +236,23 @@ export function AnalyticsPanel({
             >
               <div />
               {heatBuckets.map((bucket) => (
-                <div key={bucket} className="text-center text-[10px] text-text-dim">
+                <div key={bucket} className="text-center text-[10px] text-slate-500">
                   {bucket}
                 </div>
               ))}
               {heatSources.map((source) => (
                 <Fragment key={source}>
-                  <div key={`${source}-label`} className="truncate text-[11px] text-text-secondary">
+                  <div key={`${source}-label`} className="truncate text-[11px] text-slate-400">
                     {source}
                   </div>
                   {heatBuckets.map((bucket) => {
-                    const cell = heatRows.find((h) => h.source === source && h.bucket === bucket);
-                    const raw = cell?.score ?? 0;
+                    const raw = heatLookup.get(`${source}__${bucket}`) ?? 0;
                     const norm = normalizeHeatValue(raw, heatRange.min, heatRange.max);
                     return (
                       <div
                         key={`${source}-${bucket}`}
                         title={`${source} ${bucket} score=${raw.toFixed(1)}`}
-                        className="h-6 rounded"
+                        className="h-6 rounded-[4px] border border-slate-800/70"
                         style={{ backgroundColor: colorFrom01(norm) }}
                       />
                     );
@@ -222,13 +264,13 @@ export function AnalyticsPanel({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-4">
+      <Card className="border-border/60 bg-slate-900/70">
+        <CardContent className="p-4 md:p-5">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm text-text-secondary">Device comparison</h3>
+            <h3 className="text-xs uppercase tracking-wide text-slate-400">Device Comparison</h3>
             <div className="flex gap-2">
               <select
-                className="rounded border border-border bg-surface px-2 py-1 text-xs"
+                className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300"
                 value={compareA}
                 onChange={(e) => setCompareA(e.target.value)}
               >
@@ -239,7 +281,7 @@ export function AnalyticsPanel({
                 ))}
               </select>
               <select
-                className="rounded border border-border bg-surface px-2 py-1 text-xs"
+                className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300"
                 value={compareB}
                 onChange={(e) => setCompareB(e.target.value)}
               >
@@ -254,13 +296,40 @@ export function AnalyticsPanel({
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={compareData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d4e6d4" />
-                <XAxis dataKey="tLabel" minTickGap={20} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="a" name={compareA || deviceOptions[0] || "device A"} stroke="#0ea5e9" dot={false} />
-                <Line type="monotone" dataKey="b" name={compareB || deviceOptions[1] || "device B"} stroke="#f97316" dot={false} />
+                <CartesianGrid strokeDasharray="2 6" stroke="#334155" />
+                <XAxis
+                  dataKey="tLabel"
+                  minTickGap={20}
+                  stroke="#94a3b8"
+                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                />
+                <YAxis stroke="#94a3b8" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: "8px",
+                    color: "#e2e8f0",
+                    fontSize: 12,
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="bottom" />
+                <Line
+                  type="monotone"
+                  dataKey="a"
+                  name={compareA || deviceOptions[0] || "device A"}
+                  stroke="#22d3ee"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="b"
+                  name={compareB || deviceOptions[1] || "device B"}
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  dot={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>

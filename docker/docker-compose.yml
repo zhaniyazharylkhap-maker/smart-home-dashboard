@@ -46,8 +46,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-smarthome}:${POSTGRES_PASSWORD:-smarthome}@postgres:5432/${POSTGRES_DB:-smarthome}
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
-      MQTT_USERNAME: ${MQTT_USERNAME:-}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_USERNAME: ${MQTT_USERNAME:-smarthome}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-smarthome}
       MQTT_TELEMETRY_TOPIC: smarthome/telemetry
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
@@ -86,8 +86,8 @@ services:
       PYTHONUNBUFFERED: "1"
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
-      MQTT_USERNAME: ${MQTT_USERNAME:-}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_USERNAME: ${MQTT_USERNAME:-smarthome}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-smarthome}
       MQTT_TOPIC: smarthome/telemetry
       INTERVAL_SEC: "1"
       JSON_DATASET_PATH: data/sensors_dataset.json

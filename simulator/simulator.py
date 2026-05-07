@@ -46,6 +46,8 @@ def row_to_telemetry(room: str, row: dict) -> dict:
 def main() -> None:
     host = os.environ.get("MQTT_HOST", "localhost")
     port = int(os.environ.get("MQTT_PORT", "1883"))
+    username = os.environ.get("MQTT_USERNAME")
+    password = os.environ.get("MQTT_PASSWORD")
     topic = os.environ.get("MQTT_TOPIC", DEFAULT_TOPIC)
     interval = float(os.environ.get("INTERVAL_SEC", "1"))
     raw_path = os.environ.get(
@@ -59,6 +61,8 @@ def main() -> None:
 
     device_id, rows = load_dataset(path)
     client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION1)
+    if username and password:
+        client.username_pw_set(username, password)
     client.connect(host, port, keepalive=60)
     client.loop_start()
     print(

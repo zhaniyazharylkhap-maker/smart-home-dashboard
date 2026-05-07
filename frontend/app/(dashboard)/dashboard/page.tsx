@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { AnalyticsPanel } from "@/components/analytics-panel";
 import { TelemetryReadingCard } from "@/components/telemetry-reading-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,15 +65,10 @@ export default function DashboardPage() {
     latencyStats,
     throughputStats,
     performanceSummary,
-    anomalyThreshold,
     recentAlerts,
-    timeline,
   } = useLiveTelemetry();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
-  // TODO: replace fallback with backend-provided model threshold metadata when available.
-  const thresholdValue = anomalyThreshold ?? 0.14;
-  const thresholdDynamic = anomalyThreshold != null;
 
   const downloadMetricsCsv = () => {
     // CSV export supports reproducible thesis experiments and offline analysis.
@@ -367,13 +361,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Heatmap + overlays turn raw telemetry into interpretable risk patterns. */}
-      <AnalyticsPanel
-        timeline={timeline}
-        readings={readings}
-        anomalyThreshold={thresholdValue}
-        anomalyThresholdDynamic={thresholdDynamic}
-      />
     </div>
   );
 }

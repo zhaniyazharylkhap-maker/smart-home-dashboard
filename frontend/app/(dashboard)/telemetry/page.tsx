@@ -7,6 +7,7 @@ import {
   Line,
   LineChart,
   ResponsiveContainer,
+  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -15,6 +16,8 @@ import { AlertTriangle, ChevronDown, Filter, ShieldAlert, Thermometer, Wifi } fr
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { AnalyticsPanel } from "@/components/analytics-panel";
+import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
 import {
   fetchAlerts,
   fetchDashboardStats,
@@ -146,6 +149,14 @@ export default function TelemetryPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const {
+    readings,
+    timeline,
+    anomalyThreshold,
+    latencyStats,
+    throughputStats,
+    performanceSummary,
+  } = useLiveTelemetry();
 
   useEffect(() => {
     void (async () => {
@@ -228,6 +239,11 @@ export default function TelemetryPage() {
     [viewMode, singleMetric, selectedMetrics]
   );
   const chartData = useMemo(() => {
+    const anomalyBuckets = new Set(
+      timeline
+        .filter((p) => p.anomaly)
+        .map((p) => new Date(p.timestamp).toISOString().slice(0, 16))
+    );
     const byTime = new Map<string, { t: string } & Partial<Record<MetricKey, number | null>>>();
     for (const m of chartMetrics) {
       const points = histories[m]?.points ?? [];
@@ -240,8 +256,16 @@ export default function TelemetryPage() {
     }
     return Array.from(byTime.values())
       .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
-      .map((r) => ({ ...r, tLabel: new Date(r.t).toLocaleString() }));
-  }, [histories, chartMetrics]);
+      .map((r) => {
+        const anomalyKey = new Date(r.t).toISOString().slice(0, 16);
+        const temp = r.temperature ?? null;
+        return {
+          ...r,
+          tLabel: new Date(r.t).toLocaleString(),
+          anomaly: anomalyBuckets.has(anomalyKey) ? temp : null,
+        };
+      });
+  }, [histories, chartMetrics, timeline]);
 
   const latestByMetric = useMemo(() => {
     const out = {} as Record<MetricKey, number | null>;
@@ -261,32 +285,34 @@ export default function TelemetryPage() {
         </p>
       </div>
 
-      <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+      {/* Dense KPI cards reduce eye travel during real-time monitoring, which is why
+          BI/Grafana-style dashboards cluster high-value status indicators first. */}
+      <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
           <Thermometer className="h-4 w-4 text-accent" />
-          <span className="text-xs font-light text-text-secondary">Current temp</span>
-          <span className="font-display text-sm font-semibold text-text-primary">
+          <span className="text-[11px] uppercase tracking-wide text-slate-400">Current temp</span>
+          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
             {fmt(latestByMetric.temperature)} degC
           </span>
         </div>
-        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
           <ShieldAlert className="h-4 w-4 text-accent" />
-          <span className="text-xs font-light text-text-secondary">Risk level</span>
-          <span className="font-display text-sm font-semibold text-text-primary">
+          <span className="text-[11px] uppercase tracking-wide text-slate-400">Risk level</span>
+          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
             {topReading?.risk_level ?? "SAFE"}
           </span>
         </div>
-        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
           <AlertTriangle className="h-4 w-4 text-amber" />
-          <span className="text-xs font-light text-text-secondary">Alerts</span>
-          <span className="font-display text-sm font-semibold text-text-primary">
+          <span className="text-[11px] uppercase tracking-wide text-slate-400">Alerts</span>
+          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
             {activeAlerts}
           </span>
         </div>
-        <div className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-pill border border-border bg-surface px-4">
+        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
           <Wifi className="h-4 w-4 text-accent" />
-          <span className="text-xs font-light text-text-secondary">Devices</span>
-          <span className="font-display text-sm font-semibold text-text-primary">
+          <span className="text-[11px] uppercase tracking-wide text-slate-400">Devices active</span>
+          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
             {devicesOnline}
           </span>
         </div>
@@ -441,7 +467,7 @@ export default function TelemetryPage() {
         </div>
       ) : null}
 
-      <Card className="mb-4 p-3 md:p-4">
+      <Card className="mb-4 border-border/60 bg-slate-900/70 p-3 md:p-4">
         {loading ? (
           <div className="flex h-[200px] animate-pulse items-center justify-center text-sm text-text-secondary md:h-[280px]">
             Loading telemetry analytics...
@@ -454,27 +480,29 @@ export default function TelemetryPage() {
           <div className="h-[200px] md:h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#d4e6d4" />
+                <CartesianGrid strokeDasharray="2 6" stroke="#334155" />
                 <XAxis
                   dataKey="tLabel"
-                  stroke="#9ca3af"
+                  stroke="#94a3b8"
                   tick={{
-                    fill: "#9ca3af",
+                    fill: "#94a3b8",
                     fontFamily: "Inter",
                     fontSize: 11,
                   }}
                   minTickGap={28}
                 />
                 <YAxis
-                  stroke="#9ca3af"
+                  stroke="#94a3b8"
                   tick={{
-                    fill: "#9ca3af",
+                    fill: "#94a3b8",
                     fontFamily: "Inter",
                     fontSize: 11,
                   }}
                 />
                 <Tooltip
+                  labelFormatter={(label) => String(label)}
                   formatter={(value: unknown, name: unknown) => {
+                    if (String(name) === "anomaly") return ["Anomaly detected", "Status"];
                     const key = String(name) as MetricKey;
                     const numeric = typeof value === "number" ? value : null;
                     if (value == null) return ["—", metricLabel(key)];
@@ -486,16 +514,16 @@ export default function TelemetryPage() {
                     ];
                   }}
                   contentStyle={{
-                    background: "#ffffff",
-                    border: "1px solid #d4e6d4",
-                    borderRadius: "12px",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-                    color: "#111827",
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.28)",
+                    color: "#e2e8f0",
                     fontFamily: "Inter",
                     fontSize: 12,
                   }}
                 />
-                <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 11 }} verticalAlign="bottom" />
                 {chartMetrics.map((m) => (
                   <Line
                     key={m}
@@ -503,12 +531,13 @@ export default function TelemetryPage() {
                     dataKey={m}
                     name={m}
                     stroke={metricStroke(m)}
-                    strokeWidth={2.2}
+                    strokeWidth={2}
                     dot={false}
                     isAnimationActive
                     animationDuration={500}
                   />
                 ))}
+                <Scatter dataKey="anomaly" name="anomaly" fill="#ef4444" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -528,6 +557,53 @@ export default function TelemetryPage() {
             points={histories[m]?.points ?? []}
           />
         ))}
+      </div>
+
+      {/* Consolidating analytical modules in one dense telemetry workspace improves
+          operator context switching time and makes anomaly triage faster. */}
+      <div className="mt-4">
+        <AnalyticsPanel
+          timeline={timeline}
+          readings={readings}
+          anomalyThreshold={anomalyThreshold ?? 0.14}
+          anomalyThresholdDynamic={anomalyThreshold != null}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <Card className="border-border/60 bg-slate-900/70">
+          <CardContent className="p-4">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Latency</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-100">
+              {latencyStats.avg == null ? "—" : `${Math.round(latencyStats.avg)} ms`}
+            </p>
+            <p className="text-xs text-slate-500">
+              {latencyStats.max == null ? "No live samples yet" : `Max ${Math.round(latencyStats.max)} ms`}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60 bg-slate-900/70">
+          <CardContent className="p-4">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Throughput</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-100">
+              {throughputStats.current == null ? "—" : `${throughputStats.current.toFixed(2)} msg/s`}
+            </p>
+            <p className="text-xs text-slate-500">
+              {throughputStats.max == null ? "Waiting for stream" : `Peak ${throughputStats.max.toFixed(2)} msg/s`}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60 bg-slate-900/70">
+          <CardContent className="p-4">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Message loss</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-100">
+              {(performanceSummary.loss_rate * 100).toFixed(2)}%
+            </p>
+            <p className="text-xs text-slate-500">
+              {performanceSummary.dropped_messages}/{performanceSummary.total_messages} dropped
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
