@@ -46,10 +46,13 @@ def _on_message(_client: mqtt.Client, _userdata: object, msg: mqtt.MQTTMessage) 
 
 def start_mqtt_client() -> mqtt.Client:
     settings = get_settings()
+    if not settings.mqtt_username or not settings.mqtt_password:
+        raise ValueError("MQTT_USERNAME and MQTT_PASSWORD are required")
     client = mqtt.Client(
         callback_api_version=mqtt.CallbackAPIVersion.VERSION1,
         client_id="smarthome-backend",
     )
+    client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
     client.on_message = _on_message
 
     try:

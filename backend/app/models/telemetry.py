@@ -19,6 +19,7 @@ class Telemetry(Base):
     gas: Mapped[float | None] = mapped_column(Float, nullable=True)
     smoke: Mapped[float | None] = mapped_column(Float, nullable=True)
     t_sim: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    trace_id: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True, index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     received_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True

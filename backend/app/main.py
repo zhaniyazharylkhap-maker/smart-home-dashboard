@@ -4,12 +4,15 @@ import threading
 from contextlib import asynccontextmanager
 
 import paho.mqtt.client as mqtt
+import redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.router import api_router
+from app.core.config import get_settings
 from app.core.config import cors_origin_list
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
 from app.services.auth_service import get_user_from_token
 from app.websocket.manager import connection_manager
 from services.anomaly_service import anomaly_background_loop
@@ -22,27 +25,63 @@ _mqtt_client: mqtt.Client | None = None
 _redis_stop: threading.Event | None = None
 _redis_thread: threading.Thread | None = None
 _anomaly_task: asyncio.Task[None] | None = None
+_health_status: dict[str, str] = {"db": "error", "redis": "error", "mqtt": "error"}
+
+
+def _check_db() -> bool:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("database health check failed")
+        return False
+
+
+def _check_redis() -> bool:
+    try:
+        client = redis.from_url(get_settings().redis_url, decode_responses=True)
+        client.ping()
+        client.close()
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("redis health check failed")
+        return False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _mqtt_client, _redis_stop, _redis_thread, _anomaly_task
+    global _mqtt_client, _redis_stop, _redis_thread, _anomaly_task, _health_status
     loop = asyncio.get_running_loop()
     connection_manager.set_loop(loop)
     _redis_stop = threading.Event()
+
+    if not _check_db():
+        _health_status["db"] = "error"
+        raise RuntimeError("Critical dependency failed: PostgreSQL unavailable")
+    _health_status["db"] = "ok"
+
+    if not _check_redis():
+        _health_status["redis"] = "error"
+        raise RuntimeError("Critical dependency failed: Redis unavailable")
+    _health_status["redis"] = "ok"
+
     try:
         from app.mqtt.subscriber import start_mqtt_client
 
         _mqtt_client = start_mqtt_client()
+        _health_status["mqtt"] = "ok"
         logger.info("mqtt client started")
     except Exception as e:  # noqa: BLE001
-        logger.error("mqtt failed to start (telemetry will not ingest): %s", e)
+        _health_status["mqtt"] = "error"
+        raise RuntimeError("Critical dependency failed: MQTT unavailable") from e
     _redis_thread = None
     try:
         _redis_thread = start_redis_bridge_thread(_redis_stop)
         logger.info("redis websocket bridge started")
     except Exception as e:  # noqa: BLE001
-        logger.error("redis websocket bridge failed to start: %s", e)
+        _health_status["redis"] = "error"
+        raise RuntimeError("Critical dependency failed: Redis bridge unavailable") from e
 
     _anomaly_task = asyncio.create_task(anomaly_background_loop())
 
@@ -84,12 +123,17 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/health")
 def root_health() -> dict[str, str]:
-    return {"status": "ok"}
+    return dict(_health_status)
 
 
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket) -> None:
-    token = websocket.query_params.get("token")
+    auth_header = websocket.headers.get("authorization")
+    token = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        token = websocket.query_params.get("token")
     if not token:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="missing token")
     db = SessionLocal()
@@ -99,7 +143,9 @@ async def websocket_live(websocket: WebSocket) -> None:
         db.close()
     if user is None:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="invalid token")
-    await connection_manager.connect(websocket)
+    replay = websocket.query_params.get("replay", "latest").lower()
+    replay_mode = "full" if replay == "full" else "latest"
+    await connection_manager.connect(websocket, replay_mode=replay_mode)
     try:
         while True:
             await websocket.receive_text()

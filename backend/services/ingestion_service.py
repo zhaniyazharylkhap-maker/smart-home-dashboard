@@ -1,18 +1,27 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
 from services.risk_engine import compute_risk
 from app.services.telemetry_service import ensure_device, ensure_room
-from core.redis_client import publish
+from core.redis_client import append_stream_event
 from services.alert_engine import evaluate_telemetry
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_trace_id(device_id: str, timestamp: datetime) -> str:
+    # Stable idempotency key for QoS1 at-least-once MQTT delivery.
+    raw = f"{device_id}_{timestamp.isoformat()}"
+    return sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _default_room(raw: dict) -> dict:
@@ -59,6 +68,14 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
     ts = payload.timestamp or received_at
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
+    trace_id = payload.trace_id or _compute_trace_id(payload.device_id, ts)
+
+    existing = db.execute(
+        select(Telemetry).where(Telemetry.trace_id == trace_id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        logger.info("duplicate telemetry skipped trace_id=%s", trace_id)
+        return existing
 
     row = Telemetry(
         device_id=device.id,
@@ -70,13 +87,25 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
         gas=payload.gas,
         smoke=payload.smoke,
         t_sim=payload.t_sim,
+        trace_id=trace_id,
         timestamp=ts,
         received_at=received_at,
     )
     device.last_seen = ts
     device.status = "online"
     db.add(row)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Another worker may insert same trace_id concurrently; dedupe gracefully.
+        db.rollback()
+        dupe = db.execute(
+            select(Telemetry).where(Telemetry.trace_id == trace_id)
+        ).scalar_one_or_none()
+        if dupe is not None:
+            logger.info("duplicate telemetry resolved after race trace_id=%s", trace_id)
+            return dupe
+        raise
     db.refresh(row)
 
     risk = None
@@ -102,15 +131,16 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
         gas=row.gas,
         smoke=row.smoke,
         timestamp=row.timestamp,
-        trace_id=payload.trace_id,
+        trace_id=trace_id,
         t_sim=payload.t_sim,
         risk_score=risk.risk_score,
         risk_level=risk.risk_level,
         alert_reasons=risk.alert_reasons,
     )
-    publish(
-        f"telemetry:{device.device_id}",
-        {"type": "telemetry", "payload": reading.model_dump(mode="json")},
+    # Redis Streams provide durable storage and replayability, unlike Pub/Sub where
+    # events are dropped for disconnected websocket consumers.
+    append_stream_event(
+        {"type": "telemetry", "payload": reading.model_dump(mode="json")}
     )
     return row
 

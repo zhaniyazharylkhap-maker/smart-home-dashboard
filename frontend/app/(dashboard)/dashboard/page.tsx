@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AnalyticsPanel } from "@/components/analytics-panel";
 import { TelemetryReadingCard } from "@/components/telemetry-reading-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,10 +58,48 @@ function alertTone(level?: string | null) {
 }
 
 export default function DashboardPage() {
-  const { readings, connected, error, reload, latencyStats, recentAlerts } =
-    useLiveTelemetry();
+  const {
+    readings,
+    connected,
+    error,
+    reload,
+    latencyStats,
+    throughputStats,
+    performanceSummary,
+    anomalyThreshold,
+    recentAlerts,
+    timeline,
+  } = useLiveTelemetry();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+  // TODO: replace fallback with backend-provided model threshold metadata when available.
+  const thresholdValue = anomalyThreshold ?? 0.14;
+  const thresholdDynamic = anomalyThreshold != null;
+
+  const downloadMetricsCsv = () => {
+    // CSV export supports reproducible thesis experiments and offline analysis.
+    const rows = [
+      ["metric", "value"],
+      ["latency_avg_ms", String(performanceSummary.avg_latency_ms ?? "")],
+      ["latency_max_ms", String(performanceSummary.max_latency_ms ?? "")],
+      ["throughput_msg_per_sec", String(performanceSummary.throughput_msg_per_sec ?? "")],
+      ["throughput_max_msg_per_sec", String(performanceSummary.max_throughput_msg_per_sec ?? "")],
+      ["samples", String(performanceSummary.samples)],
+      ["messages_total", String(performanceSummary.total_messages)],
+      ["messages_dropped", String(performanceSummary.dropped_messages)],
+      ["message_loss_rate", String(performanceSummary.loss_rate)],
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dashboard-metrics-${new Date().toISOString()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const loadStats = async () => {
     try {
@@ -171,6 +210,68 @@ export default function DashboardPage() {
         />
       </section>
 
+      <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <Kpi
+          label="Throughput"
+          value={
+            throughputStats.current == null
+              ? "--"
+              : `${throughputStats.current.toFixed(2)} msg/s`
+          }
+          subtext={
+            throughputStats.max == null
+              ? "Waiting for stream"
+              : `max ${throughputStats.max.toFixed(2)} msg/s`
+          }
+          icon={Activity}
+          tone="safe"
+        />
+        <Kpi
+          label="Latency Max"
+          value={
+            performanceSummary.max_latency_ms == null
+              ? "--"
+              : `${Math.round(performanceSummary.max_latency_ms)}ms`
+          }
+          subtext="Used for thesis performance evaluation"
+          icon={Gauge}
+          tone={
+            performanceSummary.max_latency_ms != null &&
+            performanceSummary.max_latency_ms > 2000
+              ? "warning"
+              : "safe"
+          }
+        />
+        <Kpi
+          label="Perf Samples"
+          value={performanceSummary.samples}
+          subtext={
+            performanceSummary.avg_latency_ms == null
+              ? "No telemetry timing yet"
+              : `avg ${Math.round(performanceSummary.avg_latency_ms)}ms`
+          }
+          icon={Shield}
+          tone="safe"
+        />
+        <Kpi
+          label="Message Loss"
+          value={`${(performanceSummary.loss_rate * 100).toFixed(2)}%`}
+          subtext={
+            performanceSummary.total_messages === 0
+              ? "No traffic observed yet"
+              : `${performanceSummary.dropped_messages}/${performanceSummary.total_messages}`
+          }
+          icon={AlertTriangle}
+          tone={performanceSummary.dropped_messages > 0 ? "warning" : "safe"}
+        />
+      </section>
+
+      <div className="mb-4 flex justify-end">
+        <Button type="button" variant="outline" onClick={downloadMetricsCsv}>
+          Download metrics (CSV)
+        </Button>
+      </div>
+
       {error ? (
         <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-3 py-2 text-sm text-amber">
           {error}
@@ -265,6 +366,14 @@ export default function DashboardPage() {
           </Card>
         </div>
       </section>
+
+      {/* Heatmap + overlays turn raw telemetry into interpretable risk patterns. */}
+      <AnalyticsPanel
+        timeline={timeline}
+        readings={readings}
+        anomalyThreshold={thresholdValue}
+        anomalyThresholdDynamic={thresholdDynamic}
+      />
     </div>
   );
 }

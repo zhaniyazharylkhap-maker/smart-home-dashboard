@@ -11,6 +11,7 @@ from core.config import get_settings
 logger = logging.getLogger(__name__)
 
 _client: redis.Redis | None = None
+STREAM_NAME = "telemetry_stream"
 
 
 def get_redis() -> redis.Redis:
@@ -25,8 +26,15 @@ def reset_redis() -> None:
     _client = None
 
 
-def publish(channel: str, data: dict[str, Any]) -> None:
+def append_stream_event(data: dict[str, Any]) -> None:
     try:
-        get_redis().publish(channel, json.dumps(data, default=str))
+        get_redis().xadd(STREAM_NAME, {"data": json.dumps(data, default=str)})
     except Exception:  # noqa: BLE001
-        logger.exception("redis publish failed channel=%s", channel)
+        logger.exception("redis stream write failed stream=%s", STREAM_NAME)
+
+
+def publish(channel: str, data: dict[str, Any]) -> None:
+    # Compatibility shim: callers still invoke `publish`, but transport is now Redis
+    # Streams for durability/replay instead of ephemeral Pub/Sub.
+    _ = channel
+    append_stream_event(data)
