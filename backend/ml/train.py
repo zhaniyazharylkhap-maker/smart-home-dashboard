@@ -8,9 +8,11 @@ This script assumes `prepare_data.py` was executed and produced:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import joblib
 import numpy as np
+import numpy.typing as npt
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
@@ -19,9 +21,10 @@ from sklearn.model_selection import train_test_split
 ML_DIR = Path(__file__).resolve().parent
 DATA_PATH = ML_DIR / "data.npy"
 MODEL_PATH = ML_DIR / "model.pkl"
+FloatArray = npt.NDArray[np.float64]
 
 
-def _inject_synthetic_anomalies(X_test: np.ndarray, anomaly_fraction: float = 0.1) -> tuple[np.ndarray, np.ndarray]:
+def _inject_synthetic_anomalies(X_test: FloatArray, anomaly_fraction: float = 0.1) -> tuple[FloatArray, np.ndarray]:
     del anomaly_fraction  # fixed anomaly count for stable thesis-style comparison
     X_fake = X_test.copy()
 
@@ -47,7 +50,7 @@ def _inject_synthetic_anomalies(X_test: np.ndarray, anomaly_fraction: float = 0.
     return X_fake, y_true
 
 
-def _baseline_zscore_predict(X_train: np.ndarray, X_test: np.ndarray, threshold: float = 3.0) -> np.ndarray:
+def _baseline_zscore_predict(X_train: FloatArray, X_test: FloatArray, threshold: float = 3.0) -> np.ndarray:
     # Z-score is a transparent baseline with closed-form assumptions and no
     # learned tree structure, useful for thesis comparison against Isolation Forest.
     mean = X_train.mean(axis=0)
@@ -64,7 +67,7 @@ def _iforest_percentile_predict(scores: np.ndarray, percentile: int) -> tuple[np
     return pred, threshold
 
 
-def _build_balanced_eval_set(X_test: np.ndarray, X_fake: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _build_balanced_eval_set(X_test: FloatArray, X_fake: FloatArray) -> tuple[FloatArray, np.ndarray]:
     n_normal = min(500, len(X_test))
     n_anom = min(50, len(X_fake))
     if n_normal == 0 or n_anom == 0:
@@ -80,9 +83,10 @@ def _build_balanced_eval_set(X_test: np.ndarray, X_fake: np.ndarray) -> tuple[np
 
 
 def _print_metrics(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    precision = precision_score(y_true, y_pred, pos_label=-1, zero_division=0)
-    recall = recall_score(y_true, y_pred, pos_label=-1, zero_division=0)
-    f1 = f1_score(y_true, y_pred, pos_label=-1, zero_division=0)
+    # sklearn's type stubs can be stricter than runtime API for zero_division.
+    precision = precision_score(y_true, y_pred, pos_label=-1, zero_division=cast(Any, 0))
+    recall = recall_score(y_true, y_pred, pos_label=-1, zero_division=cast(Any, 0))
+    f1 = f1_score(y_true, y_pred, pos_label=-1, zero_division=cast(Any, 0))
     print(f"{name}:")
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
@@ -94,11 +98,11 @@ def main() -> None:
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"Missing prepared data: {DATA_PATH}. Run prepare_data.py first.")
 
-    X = np.load(DATA_PATH)
+    X = cast(FloatArray, np.load(DATA_PATH))
     if X.ndim != 2:
         raise ValueError("Expected 2D feature matrix in data.npy.")
 
-    X_train, X_test = train_test_split(X, test_size=0.3, random_state=42, shuffle=True)
+    X_train, X_test = cast(tuple[FloatArray, FloatArray], train_test_split(X, test_size=0.3, random_state=42, shuffle=True))
     X_fake, _ = _inject_synthetic_anomalies(X_test, anomaly_fraction=0.1)
     X_eval, y_true = _build_balanced_eval_set(X_test, X_fake)
 
@@ -106,7 +110,8 @@ def main() -> None:
 
     # Isolation Forest is suitable for mixed-tabular telemetry because it handles
     # non-Gaussian distributions and multivariate isolation without labels.
-    model = IsolationForest(contamination=0.05, random_state=42)
+    # sklearn's stubs may type contamination as str, though float works at runtime.
+    model = IsolationForest(contamination=cast(Any, 0.05), random_state=42)
     model.fit(X_train)
     # Full test-set metrics are misleading in heavy class imbalance settings:
     # with hundreds of thousands of normal points and few anomalies, precision/recall
