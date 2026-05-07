@@ -26,7 +26,10 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    if settings.jwt_secret in ["change-me", "default-secret"]:
+        raise RuntimeError("JWT_SECRET must be explicitly set")
+    return settings
 
 
 def cors_origin_list() -> list[str]:

@@ -29,7 +29,8 @@ from sklearn.preprocessing import StandardScaler  # pyright: ignore[reportMissin
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ML_DIR = Path(__file__).resolve().parent
 SENSORS_JSON_PATH = PROJECT_ROOT / "simulator" / "data" / "sensors_dataset.json"
-DEFAULT_EXTERNAL_PATH = Path("/Users/ayauka/Downloads/DB elder monitoring")
+# Dataset path is configurable via DATA_PATH for reproducible runs across machines.
+DATA_PATH = os.getenv("DATA_PATH", "data/default_dataset.csv")
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
@@ -118,8 +119,7 @@ def _append_engineered_features(X_base: np.ndarray) -> np.ndarray:
 def main() -> None:
     np.random.seed(42)
 
-    external_path_str = os.environ.get("EXTERNAL_DATASET_PATH", str(DEFAULT_EXTERNAL_PATH))
-    external_path = Path(external_path_str)
+    external_path = Path(DATA_PATH)
 
     sensors_rows = _load_sensors_rows(SENSORS_JSON_PATH)
     external_rows = _load_external_rows(external_path)

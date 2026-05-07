@@ -24,30 +24,33 @@ MODEL_PATH = ML_DIR / "model.pkl"
 FloatArray = npt.NDArray[np.float64]
 
 
-def _inject_synthetic_anomalies(X_test: FloatArray, anomaly_fraction: float = 0.1) -> tuple[FloatArray, np.ndarray]:
-    del anomaly_fraction  # fixed anomaly count for stable thesis-style comparison
-    X_fake = X_test.copy()
+def generate_rule_labels(X: FloatArray) -> np.ndarray:
+    """
+    Generate anomaly labels using domain rules.
 
-    # Ground truth follows {-1: anomaly, 1: normal} to align with Isolation Forest.
-    y_true = np.ones(len(X_fake), dtype=int)
-    n_anom = min(50, len(X_fake))
-    y_true[:n_anom] = -1
+    Feature order:
+    [temperature, light, motion, gas, smoke, delta_temp, rolling_mean]
+    """
+    # Synthetic anomaly injection was removed because it can bias evaluation with
+    # artifacts that may not represent real IoT failure/safety conditions.
+    # In diploma-scale unsupervised anomaly detection, labeled IoT anomalies are
+    # often unavailable; therefore, rule-based proxy labels are a common and
+    # academically defensible way to estimate precision/recall/F1.
+    temperature = X[:, 0]
+    gas = X[:, 3]
+    smoke = X[:, 4]
+    delta_temp = X[:, 5]
 
-    # Synthetic anomalies are required because the merged datasets do not contain
-    # reliable anomaly labels. We use two realistic perturbation styles:
-    # 1) noise-based drift (subtle sensor perturbation)
-    # 2) moderate multiplicative spikes (non-catastrophic excursions)
-    half = n_anom // 2
-    if half > 0:
-        rng = np.random.default_rng(42)
-        noise = rng.normal(0.0, 0.5, X_fake.shape)
-        X_fake[:half] += noise[:half]
-    if n_anom - half > 0:
-        rng = np.random.default_rng(99)
-        scales = rng.uniform(1.5, 2.0, size=(n_anom - half, 1))
-        X_fake[half:n_anom] *= scales
+    rule_anomaly = (
+        (temperature > 35)
+        | (gas > 0.6)
+        | (smoke > 0.5)
+        | (np.abs(delta_temp) > 5)
+    )
 
-    return X_fake, y_true
+    y = np.ones(len(X))
+    y[rule_anomaly] = -1
+    return y.astype(int)
 
 
 def _baseline_zscore_predict(X_train: FloatArray, X_test: FloatArray, threshold: float = 3.0) -> np.ndarray:
@@ -65,21 +68,6 @@ def _iforest_percentile_predict(scores: np.ndarray, percentile: int) -> tuple[np
     threshold = float(np.percentile(scores, percentile))
     pred = np.where(scores < threshold, -1, 1)
     return pred, threshold
-
-
-def _build_balanced_eval_set(X_test: FloatArray, X_fake: FloatArray) -> tuple[FloatArray, np.ndarray]:
-    n_normal = min(500, len(X_test))
-    n_anom = min(50, len(X_fake))
-    if n_normal == 0 or n_anom == 0:
-        raise ValueError("Balanced evaluation requires at least 1 normal and 1 anomaly sample.")
-
-    X_normal = X_test[:n_normal]
-    X_anomaly = X_fake[:n_anom]
-    X_eval = np.concatenate([X_normal, X_anomaly], axis=0)
-
-    y_true = np.ones(len(X_eval), dtype=int)
-    y_true[-n_anom:] = -1
-    return X_eval, y_true
 
 
 def _print_metrics(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> None:
@@ -103,37 +91,39 @@ def main() -> None:
         raise ValueError("Expected 2D feature matrix in data.npy.")
 
     X_train, X_test = cast(tuple[FloatArray, FloatArray], train_test_split(X, test_size=0.3, random_state=42, shuffle=True))
-    X_fake, _ = _inject_synthetic_anomalies(X_test, anomaly_fraction=0.1)
-    X_eval, y_true = _build_balanced_eval_set(X_test, X_fake)
+    y_true = generate_rule_labels(X_test)
+    num_anomalies = int((y_true == -1).sum())
+    total = len(y_true)
+    print(f"Total samples: {total}")
+    print(f"Rule-based anomalies: {num_anomalies} ({num_anomalies / total:.2%})")
+    print()
 
-    z_pred = _baseline_zscore_predict(X_train, X_eval, threshold=3.0)
+    z_pred = _baseline_zscore_predict(X_train, X_test, threshold=3.0)
 
     # Isolation Forest is suitable for mixed-tabular telemetry because it handles
     # non-Gaussian distributions and multivariate isolation without labels.
     # sklearn's stubs may type contamination as str, though float works at runtime.
     model = IsolationForest(contamination=cast(Any, 0.05), random_state=42)
     model.fit(X_train)
-    # Full test-set metrics are misleading in heavy class imbalance settings:
-    # with hundreds of thousands of normal points and few anomalies, precision/recall
-    # can look artificially poor or inflated depending on cutoff choice. We therefore
-    # report a balanced evaluation split and calibrate threshold on train scores only.
-    scores_train = model.decision_function(X_train)
-    threshold_5 = float(np.percentile(scores_train, 5))
-    threshold_10 = float(np.percentile(scores_train, 10))
+    scores = model.decision_function(X_test)
+    print(f"Score range: min={scores.min():.4f}, max={scores.max():.4f}")
+    print()
 
-    scores_eval = model.decision_function(X_eval)
-    if_pred_5 = np.where(scores_eval < threshold_5, -1, 1)
-    if_pred_10 = np.where(scores_eval < threshold_10, -1, 1)
+    threshold = max(float(np.percentile(scores, 5)), 1e-6)
+    pred_5 = np.where(scores < threshold, -1, 1)
+    thr_5 = threshold
+    pred_10, thr_10 = _iforest_percentile_predict(scores, 10)
 
-    # Default `model.predict()` relies on internal contamination-based cutoffs that
-    # can be overly conservative after cross-domain data mixing. Percentile-based
-    # score thresholds explicitly tune sensitivity and improve recall visibility.
-    # Lower thresholds (e.g., 5%) usually favor precision, while higher anomaly-rate
-    # thresholds (e.g., 10%) typically increase recall at some precision cost.
+    # Threshold tuning exposes the precision/recall trade-off: 5% is stricter and
+    # usually improves precision, while 10% is more sensitive and usually improves
+    # recall. In safety-oriented systems, a lower recall may still be acceptable
+    # when each alert triggers costly manual checks and high precision is required.
     _print_metrics("Z-score", y_true, z_pred)
-    _print_metrics("Isolation Forest (5%)", y_true, if_pred_5)
-    _print_metrics("Isolation Forest (10%)", y_true, if_pred_10)
-    print(f"Calibrated thresholds: p5={threshold_5:.6f}, p10={threshold_10:.6f}")
+    _print_metrics("Isolation Forest (5%)", y_true, pred_5)
+    _print_metrics("Isolation Forest (10%)", y_true, pred_10)
+    print("Thresholds:")
+    print(f"p5={thr_5:.6f}")
+    print(f"p10={thr_10:.6f}")
 
     joblib.dump(model, MODEL_PATH)
     print(f"Saved: {MODEL_PATH}")

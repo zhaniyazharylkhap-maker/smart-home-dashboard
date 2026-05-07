@@ -25,7 +25,7 @@ SCALER_PATH = ML_DIR / "scaler.pkl"
 
 def _load_artifacts() -> tuple[object | None, object | None]:
     if not MODEL_PATH.is_file() or not SCALER_PATH.is_file():
-        return None
+        return None, None
     try:
         model = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)

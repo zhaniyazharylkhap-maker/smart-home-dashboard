@@ -28,7 +28,12 @@ def reset_redis() -> None:
 
 def append_stream_event(data: dict[str, Any]) -> None:
     try:
-        get_redis().xadd(STREAM_NAME, {"data": json.dumps(data, default=str)})
+        get_redis().xadd(
+            STREAM_NAME,
+            {"data": json.dumps(data, default=str)},
+            maxlen=100000,
+            approximate=True,
+        )
     except Exception:  # noqa: BLE001
         logger.exception("redis stream write failed stream=%s", STREAM_NAME)
 

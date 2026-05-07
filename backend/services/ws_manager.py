@@ -1,11 +1,11 @@
 from __future__ import annotations
-
+import os
 import asyncio
 import json
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import redis
 from fastapi import WebSocket
@@ -15,6 +15,8 @@ from core.redis_client import STREAM_NAME
 
 logger = logging.getLogger(__name__)
 GROUP_NAME = "ws_group"
+StreamFields = dict[str, Any]
+StreamEvent = tuple[str, StreamFields]
 
 
 class ConnectionManager:
@@ -38,7 +40,7 @@ class ConnectionManager:
             msg_id = start_id
             replayed = 0
             while True:
-                rows = r.xrange(STREAM_NAME, min=msg_id, max="+", count=100)
+                rows = cast(list[StreamEvent], r.xrange(STREAM_NAME, min=msg_id, max="+", count=100))
                 if not rows:
                     break
                 for event_id, fields in rows:
@@ -118,12 +120,15 @@ def run_redis_subscriber(stop_event: threading.Event) -> None:
             consumer_name = f"ws_consumer_{os.getpid()}_{threading.get_ident()}"
             logger.info("ws stream consumer started stream=%s group=%s", STREAM_NAME, GROUP_NAME)
             while not stop_event.is_set():
-                messages = r.xreadgroup(
-                    groupname=GROUP_NAME,
-                    consumername=consumer_name,
-                    streams={STREAM_NAME: ">"},
-                    block=5000,
-                    count=10,
+                messages = cast(
+                    list[tuple[str, list[StreamEvent]]],
+                    r.xreadgroup(
+                        groupname=GROUP_NAME,
+                        consumername=consumer_name,
+                        streams={STREAM_NAME: ">"},
+                        block=5000,
+                        count=10,
+                    ),
                 )
                 if not messages:
                     continue
