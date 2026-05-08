@@ -18,7 +18,17 @@ def _build_session() -> Session:
 
 def test_ingestion_is_idempotent_for_duplicate_payload(monkeypatch) -> None:
     db = _build_session()
-    monkeypatch.setattr("services.ingestion_service.publish", lambda *_args, **_kwargs: None)
+    # Stub out side-effects that require live infrastructure (Redis,
+    # ML artifacts). The contextual layer falls back to degraded mode
+    # automatically, but we silence its persistence call as well.
+    monkeypatch.setattr(
+        "services.ingestion_service.append_stream_event",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "services.ingestion_service.contextual_storage.record_event",
+        lambda *_args, **_kwargs: None,
+    )
 
     payload = TelemetryIngest(
         device_id="esp32-1",

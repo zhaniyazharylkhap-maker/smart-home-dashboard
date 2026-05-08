@@ -1,0 +1,87 @@
+{
+  "schema_version": "contextual_v1",
+  "feature_names": [
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "is_night",
+    "is_weekend",
+    "temperature",
+    "humidity",
+    "gas",
+    "smoke",
+    "light",
+    "occupancy_total",
+    "any_motion",
+    "temperature_5m_mean",
+    "temperature_5m_std",
+    "humidity_5m_mean",
+    "gas_5m_mean",
+    "smoke_5m_mean",
+    "temperature_30m_mean",
+    "humidity_30m_mean",
+    "delta_temperature_5m",
+    "delta_gas_5m",
+    "gas_no_occupancy",
+    "motion_at_night",
+    "humidity_off_profile"
+  ],
+  "rows_total": 49167,
+  "rows_train": 29500,
+  "rows_val": 9833,
+  "rows_test": 9834,
+  "anomalies_total": 4749,
+  "raw_thresholds": {
+    "temperature_high": 24.960099999999986,
+    "gas_high": 274.0099999999984,
+    "smoke_high": 716.0,
+    "humidity_high": 59.33,
+    "humidity_low": 42.499900000000004,
+    "gas_context": 174.0,
+    "delta_temp_c": 4.0,
+    "proxy_quantile": 0.99,
+    "context_quantile": 0.95
+  },
+  "ensemble": {
+    "weights": {
+      "isolation_forest": 0.5,
+      "lof": 0.5
+    },
+    "score_ranges": {
+      "isolation_forest": {
+        "lo": -0.23911039705383086,
+        "hi": 0.10688857453319806
+      },
+      "lof": {
+        "lo": -5.638914673292906,
+        "hi": 0.5568127943408635
+      }
+    },
+    "default_threshold": 20.647020894600193,
+    "default_threshold_quantile": 0.9073220338983051,
+    "train_anomaly_rate": 0.09267796610169492
+  },
+  "metrics": {
+    "rule_baseline": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "isolation_forest": {
+      "precision": 0.506050605060506,
+      "recall": 0.4020979020979021,
+      "f1": 0.44812469556746226
+    },
+    "lof": {
+      "precision": 0.18439077144917088,
+      "recall": 0.8942307692307693,
+      "f1": 0.3057381948595338
+    },
+    "ensemble": {
+      "precision": 0.2996889042516419,
+      "recall": 0.7578671328671329,
+      "f1": 0.4295268763933614
+    }
+  }
+}

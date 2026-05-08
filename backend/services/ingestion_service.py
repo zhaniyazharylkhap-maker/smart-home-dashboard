@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
+from app.services import contextual_storage
 from services.risk_engine import compute_risk
 from app.services.telemetry_service import ensure_device, ensure_room
 from core.config import get_settings
 from core.redis_client import append_stream_event
 from services.alert_engine import evaluate_telemetry
+from services.contextual_service import evaluate_contextual_event
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +129,10 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
             motion=payload.motion,
         )
 
+    # Contextual anomaly inference. Failures degrade silently to None
+    # so the telemetry pipeline never blocks on the ML layer.
+    ctx = evaluate_contextual_event(payload)
+
     reading = TelemetryReading(
         device_id=device.device_id,
         room=room.name,
@@ -142,12 +148,41 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
         risk_score=risk.risk_score,
         risk_level=risk.risk_level,
         alert_reasons=risk.alert_reasons,
+        anomaly_score=(ctx.score if ctx else None),
+        anomaly_threshold=(ctx.threshold if ctx else None),
+        is_contextual_anomaly=(ctx.is_anomaly if ctx else None),
+        explanation_tokens=(ctx.explanations if ctx else None),
+        model_version=(ctx.model_version if ctx else None),
     )
     # Redis Streams provide durable storage and replayability, unlike Pub/Sub where
     # events are dropped for disconnected websocket consumers.
     append_stream_event(
         {"type": "telemetry", "payload": reading.model_dump(mode="json")}
     )
+
+    if ctx is not None:
+        ctx_event = {
+            "device_id": device.device_id,
+            "room": room.name,
+            "timestamp": row.timestamp.isoformat(),
+            "anomaly_score": ctx.score,
+            "anomaly_threshold": ctx.threshold,
+            "is_contextual_anomaly": ctx.is_anomaly,
+            "explanation_tokens": ctx.explanations,
+            "feature_contributions": [
+                {"feature": name, "z": z}
+                for name, z in ctx.feature_contributions
+            ],
+            "model_version": ctx.model_version,
+            "degraded": ctx.degraded,
+        }
+        contextual_storage.record_event(ctx_event)
+        if ctx.is_anomaly:
+            # Emit a dedicated WS event type so the frontend can wire
+            # it into the anomaly feed without ambiguity.
+            append_stream_event(
+                {"type": "contextual_anomaly", "payload": ctx_event}
+            )
     return row
 
 

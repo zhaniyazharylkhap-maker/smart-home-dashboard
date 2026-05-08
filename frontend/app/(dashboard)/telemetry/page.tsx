@@ -17,6 +17,7 @@ import { AlertTriangle, ChevronDown, Filter, ShieldAlert, Thermometer, Wifi } fr
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnalyticsPanel } from "@/components/analytics-panel";
+import { ContextualAnalyticsPanel } from "@/components/contextual-analytics-panel";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
 import {
   fetchAlerts,
@@ -156,6 +157,8 @@ export default function TelemetryPage() {
     latencyStats,
     throughputStats,
     performanceSummary,
+    anomalyByDevice,
+    recentAnomalyEvents,
   } = useLiveTelemetry();
 
   useEffect(() => {
@@ -567,6 +570,16 @@ export default function TelemetryPage() {
           readings={readings}
           anomalyThreshold={anomalyThreshold ?? 0.14}
           anomalyThresholdDynamic={anomalyThreshold != null}
+        />
+      </div>
+
+      {/* Intelligent IoT analytics: live anomaly score, contextual explanations,
+          behavioral heatmap, cross-sensor correlation, learned-normal envelopes. */}
+      <div className="mt-4">
+        <ContextualAnalyticsPanel
+          timeline={timeline}
+          anomalyByDevice={anomalyByDevice}
+          recentAnomalyEvents={recentAnomalyEvents}
         />
       </div>
 

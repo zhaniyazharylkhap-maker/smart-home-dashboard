@@ -13,10 +13,33 @@ export type TelemetryReading = {
   risk_score?: number | null;
   risk_level?: "SAFE" | "WARNING" | "CRITICAL" | string | null;
   alert_reasons?: string[] | null;
+  anomaly_score?: number | null;
+  anomaly_threshold?: number | null;
+  is_contextual_anomaly?: boolean | null;
+  explanation_tokens?: string[] | null;
+  model_version?: string | null;
 };
 
 export type LatestTelemetryResponse = {
   readings: TelemetryReading[];
+};
+
+export type FeatureContribution = {
+  feature: string;
+  z: number;
+};
+
+export type ContextualAnomalyEvent = {
+  device_id: string;
+  room: string;
+  timestamp: string;
+  anomaly_score: number;
+  anomaly_threshold: number;
+  is_contextual_anomaly: boolean;
+  explanation_tokens: string[];
+  feature_contributions: FeatureContribution[];
+  model_version: string;
+  degraded?: boolean;
 };
 
 export type WsMessage =
@@ -36,4 +59,5 @@ export type WsMessage =
       };
     }
   | { type: "telemetry"; payload: TelemetryReading }
+  | { type: "contextual_anomaly"; payload: ContextualAnomalyEvent }
   | { type: string; payload?: unknown };

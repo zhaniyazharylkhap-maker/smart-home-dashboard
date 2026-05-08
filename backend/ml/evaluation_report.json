@@ -1,0 +1,42 @@
+{
+  "test_samples": 9834,
+  "models": {
+    "rule_baseline": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "isolation_forest_alone": {
+      "precision": 0.506050605060506,
+      "recall": 0.4020979020979021,
+      "f1": 0.44812469556746226
+    },
+    "lof_alone": {
+      "precision": 0.18439077144917088,
+      "recall": 0.8942307692307693,
+      "f1": 0.3057381948595338
+    },
+    "ensemble_if_lof": {
+      "precision": 0.2996889042516419,
+      "recall": 0.7578671328671329,
+      "f1": 0.4295268763933614
+    },
+    "ensemble_minus_residuals": {
+      "precision": 0.2867590454195535,
+      "recall": 0.6512237762237763,
+      "f1": 0.3981827899518974
+    }
+  },
+  "operational": {
+    "false_alerts_per_day": 17800.122,
+    "median_ttd_samples": 0.0
+  },
+  "latency": {
+    "p50_ms": 2.197520501795225,
+    "p95_ms": 3.524635749636218,
+    "p99_ms": 4.77714626584202,
+    "mean_ms": 2.4253152925375616,
+    "samples": 2000
+  },
+  "ensemble_threshold": 20.647020894600193
+}

@@ -1,0 +1,1708 @@
+{
+  "schema_version": "contextual_v1",
+  "behavior_key_sensors": [
+    "temperature",
+    "humidity",
+    "gas",
+    "smoke"
+  ],
+  "behavior_windows": [
+    "5m",
+    "30m",
+    "24h"
+  ],
+  "behavior_stats": [
+    "mean",
+    "std",
+    "min",
+    "max"
+  ],
+  "canonical_rooms": [
+    "living_room",
+    "bedroom",
+    "bathroom",
+    "kitchen",
+    "hallway",
+    "lab",
+    "unknown"
+  ],
+  "occupancy_states": [
+    "present",
+    "absent",
+    "unknown"
+  ],
+  "sensor_groups": [
+    "environment",
+    "gas_monitor",
+    "occupancy",
+    "fused"
+  ],
+  "fields": [
+    {
+      "name": "device_id",
+      "group": "identity",
+      "dtype": "str",
+      "description": "Stable external device identifier.",
+      "units": null,
+      "nullable": false,
+      "default": null,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "not_input",
+      "is_model_input": false,
+      "clip": null
+    },
+    {
+      "name": "room",
+      "group": "identity",
+      "dtype": "enum",
+      "description": "Canonical room label the reading belongs to.",
+      "units": null,
+      "nullable": false,
+      "default": "unknown",
+      "fill_policy": "unknown_state",
+      "enum_values": [
+        "living_room",
+        "bedroom",
+        "bathroom",
+        "kitchen",
+        "hallway",
+        "lab",
+        "unknown"
+      ],
+      "encoding": "not_input",
+      "is_model_input": false,
+      "clip": null
+    },
+    {
+      "name": "sensor_group",
+      "group": "identity",
+      "dtype": "enum",
+      "description": "Provenance of the row — separates ambient environment streams from gas-monitor and occupancy streams so contextual residuals can be conditioned on it.",
+      "units": null,
+      "nullable": false,
+      "default": "fused",
+      "fill_policy": "unknown_state",
+      "enum_values": [
+        "environment",
+        "gas_monitor",
+        "occupancy",
+        "fused"
+      ],
+      "encoding": "not_input",
+      "is_model_input": false,
+      "clip": null
+    },
+    {
+      "name": "event_ts",
+      "group": "time",
+      "dtype": "datetime",
+      "description": "UTC event timestamp; primary key together with device_id.",
+      "units": null,
+      "nullable": false,
+      "default": null,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "not_input",
+      "is_model_input": false,
+      "clip": null
+    },
+    {
+      "name": "hour_sin",
+      "group": "time",
+      "dtype": "float",
+      "description": "sin(2π · hour_of_day / 24) — cyclic encoding of time-of-day.",
+      "units": null,
+      "nullable": false,
+      "default": null,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "name": "hour_cos",
+      "group": "time",
+      "dtype": "float",
+      "description": "cos(2π · hour_of_day / 24).",
+      "units": null,
+      "nullable": false,
+      "default": null,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "name": "dow_sin",
+      "group": "time",
+      "dtype": "float",
+      "description": "sin(2π · day_of_week / 7).",
+      "units": null,
+      "nullable": false,
+      "default": null,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "name": "dow_cos",
+      "group": "time",
+      "dtype": "float",
+      "description": "cos(2π · day_of_week / 7).",
+      "units": null,
+      "nullable": false,
+      "default": null,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_night",
+      "group": "time",
+      "dtype": "int",
+      "description": "1 if local hour ∈ [22, 06), else 0. Used by night-motion residual.",
+      "units": null,
+      "nullable": false,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_weekend",
+      "group": "time",
+      "dtype": "int",
+      "description": "1 if event_ts falls on Saturday or Sunday (local), else 0.",
+      "units": null,
+      "nullable": false,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "temperature",
+      "group": "environment",
+      "dtype": "float",
+      "description": "Ambient temperature.",
+      "units": "°C",
+      "nullable": true,
+      "default": null,
+      "fill_policy": "forward_fill_short",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        -40.0,
+        85.0
+      ]
+    },
+    {
+      "name": "humidity",
+      "group": "environment",
+      "dtype": "float",
+      "description": "Relative humidity.",
+      "units": "%",
+      "nullable": true,
+      "default": null,
+      "fill_policy": "forward_fill_short",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        100.0
+      ]
+    },
+    {
+      "name": "gas",
+      "group": "environment",
+      "dtype": "float",
+      "description": "Combustible-gas indicator normalised into [0, 1]. CSV CO sensor raw value divided by the documented saturation reference; live ESP32 already publishes a normalised value.",
+      "units": "normalized_0_1",
+      "nullable": true,
+      "default": null,
+      "fill_policy": "forward_fill_short",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.5
+      ]
+    },
+    {
+      "name": "smoke",
+      "group": "environment",
+      "dtype": "float",
+      "description": "Smoke / particulate indicator normalised into [0, 1]. CSV uses mean of MOX1..MOX4 / 1000; live ESP32 publishes a normalised value directly.",
+      "units": "normalized_0_1",
+      "nullable": true,
+      "default": null,
+      "fill_policy": "forward_fill_short",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.5
+      ]
+    },
+    {
+      "name": "light",
+      "group": "environment",
+      "dtype": "float",
+      "description": "Illuminance proxy. CSV: CO2CosIRValue / 1024 (honest proxy, not calibrated lux). Live ESP32: lux value as published.",
+      "units": "lux_proxy",
+      "nullable": true,
+      "default": null,
+      "fill_policy": "forward_fill_short",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        100000.0
+      ]
+    },
+    {
+      "name": "motion",
+      "group": "environment",
+      "dtype": "int",
+      "description": "PIR motion event in this sampling window (0/1).",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "occupancy_state",
+      "group": "occupancy",
+      "dtype": "enum",
+      "description": "Coarse presence label fused from PIR, position dataset, and fallback heuristics.",
+      "units": null,
+      "nullable": true,
+      "default": "unknown",
+      "fill_policy": "unknown_state",
+      "enum_values": [
+        "present",
+        "absent",
+        "unknown"
+      ],
+      "encoding": "one_hot",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "position_zone",
+      "group": "occupancy",
+      "dtype": "enum",
+      "description": "Room-level zone where occupancy was inferred.",
+      "units": null,
+      "nullable": true,
+      "default": "unknown",
+      "fill_policy": "unknown_state",
+      "enum_values": [
+        "living_room",
+        "bedroom",
+        "bathroom",
+        "kitchen",
+        "hallway",
+        "lab",
+        "unknown"
+      ],
+      "encoding": "one_hot",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "occupancy_confidence",
+      "group": "occupancy",
+      "dtype": "float",
+      "description": "Confidence of the occupancy_state value in [0, 1]. The position CSV has hard 0/1 labels (1.0 confidence); a motion-only fallback yields 0.5; pure absence of evidence is 0.0.",
+      "units": null,
+      "nullable": true,
+      "default": 0.0,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "temperature_mean_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of temperature over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_std_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of temperature over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_min_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of temperature over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_max_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of temperature over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_mean_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of temperature over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_std_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of temperature over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_min_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of temperature over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_max_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of temperature over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_mean_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of temperature over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_std_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of temperature over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_min_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of temperature over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "temperature_max_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of temperature over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_mean_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of humidity over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_std_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of humidity over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_min_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of humidity over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_max_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of humidity over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_mean_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of humidity over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_std_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of humidity over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_min_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of humidity over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_max_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of humidity over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_mean_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of humidity over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_std_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of humidity over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_min_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of humidity over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_max_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of humidity over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_mean_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of gas over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_std_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of gas over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_min_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of gas over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_max_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of gas over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_mean_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of gas over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_std_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of gas over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_min_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of gas over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_max_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of gas over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_mean_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of gas over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_std_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of gas over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_min_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of gas over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_max_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of gas over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_mean_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of smoke over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_std_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of smoke over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_min_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of smoke over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_max_5m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of smoke over the last 5m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_mean_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of smoke over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_std_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of smoke over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_min_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of smoke over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_max_30m",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of smoke over the last 30m (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_mean_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling mean of smoke over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_std_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling std of smoke over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_min_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling min of smoke over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "smoke_max_24h",
+      "group": "behavior",
+      "dtype": "float",
+      "description": "Rolling max of smoke over the last 24h (per device, time-anchored window).",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "gas_vs_occupancy_residual",
+      "group": "residual",
+      "dtype": "float",
+      "description": "Z-score of gas conditional on occupancy_state. Captures gas rising while the home is reported empty.",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "humidity_vs_room_profile_residual",
+      "group": "residual",
+      "dtype": "float",
+      "description": "Z-score of humidity conditional on room. Bathroom and kitchen profiles are wider than bedroom / hallway.",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": null
+    },
+    {
+      "name": "motion_at_night_score",
+      "group": "residual",
+      "dtype": "float",
+      "description": "Logistic score in [0, 1] combining is_night, motion, and the device's own night-time motion frequency baseline.",
+      "units": null,
+      "nullable": true,
+      "default": null,
+      "fill_policy": "zero_with_flag",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_temperature",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if temperature was absent in the source row before any imputation.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_humidity",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if humidity was absent in the source row before any imputation.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_gas",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if gas was absent in the source row before any imputation.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_smoke",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if smoke was absent in the source row before any imputation.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_light",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if light was absent in the source row before any imputation.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_motion",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if motion was absent in the source row before any imputation.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "is_missing_occupancy",
+      "group": "missing",
+      "dtype": "int",
+      "description": "1 if no occupancy evidence was available for the row.",
+      "units": null,
+      "nullable": true,
+      "default": 0,
+      "fill_policy": "none",
+      "enum_values": null,
+      "encoding": "passthrough",
+      "is_model_input": true,
+      "clip": [
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "model_input_fields": [
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "is_night",
+    "is_weekend",
+    "temperature",
+    "humidity",
+    "gas",
+    "smoke",
+    "light",
+    "motion",
+    "occupancy_state",
+    "position_zone",
+    "occupancy_confidence",
+    "temperature_mean_5m",
+    "temperature_std_5m",
+    "temperature_min_5m",
+    "temperature_max_5m",
+    "temperature_mean_30m",
+    "temperature_std_30m",
+    "temperature_min_30m",
+    "temperature_max_30m",
+    "temperature_mean_24h",
+    "temperature_std_24h",
+    "temperature_min_24h",
+    "temperature_max_24h",
+    "humidity_mean_5m",
+    "humidity_std_5m",
+    "humidity_min_5m",
+    "humidity_max_5m",
+    "humidity_mean_30m",
+    "humidity_std_30m",
+    "humidity_min_30m",
+    "humidity_max_30m",
+    "humidity_mean_24h",
+    "humidity_std_24h",
+    "humidity_min_24h",
+    "humidity_max_24h",
+    "gas_mean_5m",
+    "gas_std_5m",
+    "gas_min_5m",
+    "gas_max_5m",
+    "gas_mean_30m",
+    "gas_std_30m",
+    "gas_min_30m",
+    "gas_max_30m",
+    "gas_mean_24h",
+    "gas_std_24h",
+    "gas_min_24h",
+    "gas_max_24h",
+    "smoke_mean_5m",
+    "smoke_std_5m",
+    "smoke_min_5m",
+    "smoke_max_5m",
+    "smoke_mean_30m",
+    "smoke_std_30m",
+    "smoke_min_30m",
+    "smoke_max_30m",
+    "smoke_mean_24h",
+    "smoke_std_24h",
+    "smoke_min_24h",
+    "smoke_max_24h",
+    "gas_vs_occupancy_residual",
+    "humidity_vs_room_profile_residual",
+    "motion_at_night_score",
+    "is_missing_temperature",
+    "is_missing_humidity",
+    "is_missing_gas",
+    "is_missing_smoke",
+    "is_missing_light",
+    "is_missing_motion",
+    "is_missing_occupancy"
+  ],
+  "csv_sources": [
+    {
+      "source_id": "data_ref_until_2020-02-13.csv",
+      "description": "Reference period (2019-11..2020-02) of the elder-monitoring environment dataset. Used as the 'normal' distribution prior and as the training base for the IF / LOF environment view.",
+      "raw_columns": [
+        "timestamp",
+        "temperature",
+        "humidity",
+        "CO2CosIRValue",
+        "CO2MG811Value",
+        "MOX1",
+        "MOX2",
+        "MOX3",
+        "MOX4",
+        "COValue"
+      ],
+      "mappings": [
+        {
+          "target": "event_ts",
+          "raw_columns": [
+            "timestamp"
+          ],
+          "transform": "parse ISO8601 with offset, convert to UTC",
+          "constant": null
+        },
+        {
+          "target": "device_id",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "ds_data_ref"
+        },
+        {
+          "target": "room",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "lab"
+        },
+        {
+          "target": "sensor_group",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "environment"
+        },
+        {
+          "target": "temperature",
+          "raw_columns": [
+            "temperature"
+          ],
+          "transform": "passthrough float (already °C)",
+          "constant": null
+        },
+        {
+          "target": "humidity",
+          "raw_columns": [
+            "humidity"
+          ],
+          "transform": "passthrough float (already %)",
+          "constant": null
+        },
+        {
+          "target": "light",
+          "raw_columns": [
+            "CO2CosIRValue"
+          ],
+          "transform": "CO2CosIRValue / 1024.0 — honest illuminance proxy; the CSV lacks a real lux sensor.",
+          "constant": null
+        },
+        {
+          "target": "gas",
+          "raw_columns": [
+            "COValue"
+          ],
+          "transform": "COValue / 1000.0 — normalises the raw CO sensor count into [0, 1] using the documented saturation reference.",
+          "constant": null
+        },
+        {
+          "target": "smoke",
+          "raw_columns": [
+            "MOX1",
+            "MOX2",
+            "MOX3",
+            "MOX4"
+          ],
+          "transform": "mean(MOX1..MOX4) / 1000.0 — averaged MOX array",
+          "constant": null
+        },
+        {
+          "target": "motion",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "occupancy_state",
+          "raw_columns": [],
+          "transform": "no occupancy evidence in this CSV",
+          "constant": "unknown"
+        },
+        {
+          "target": "position_zone",
+          "raw_columns": [],
+          "transform": "no spatial evidence in this CSV",
+          "constant": "unknown"
+        },
+        {
+          "target": "occupancy_confidence",
+          "raw_columns": [],
+          "transform": "no occupancy evidence in this CSV",
+          "constant": 0.0
+        }
+      ],
+      "notes": "CO2MG811Value is intentionally unmapped — its calibration drifts with humidity and the deployed dashboard does not consume CO2."
+    },
+    {
+      "source_id": "database_gas.csv",
+      "description": "Long-tail gas-monitoring stream from the same lab. Used to expand the gas / smoke / CO regime coverage during training.",
+      "raw_columns": [
+        "timestamp",
+        "temperature",
+        "humidity",
+        "CO2CosIRValue",
+        "CO2MG811Value",
+        "MOX1",
+        "MOX2",
+        "MOX3",
+        "MOX4",
+        "COValue"
+      ],
+      "mappings": [
+        {
+          "target": "event_ts",
+          "raw_columns": [
+            "timestamp"
+          ],
+          "transform": "parse ISO8601 with offset, convert to UTC",
+          "constant": null
+        },
+        {
+          "target": "device_id",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "ds_database_gas"
+        },
+        {
+          "target": "room",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "lab"
+        },
+        {
+          "target": "sensor_group",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "gas_monitor"
+        },
+        {
+          "target": "temperature",
+          "raw_columns": [
+            "temperature"
+          ],
+          "transform": "passthrough float (already °C)",
+          "constant": null
+        },
+        {
+          "target": "humidity",
+          "raw_columns": [
+            "humidity"
+          ],
+          "transform": "passthrough float (already %)",
+          "constant": null
+        },
+        {
+          "target": "light",
+          "raw_columns": [
+            "CO2CosIRValue"
+          ],
+          "transform": "CO2CosIRValue / 1024.0 — honest illuminance proxy; the CSV lacks a real lux sensor.",
+          "constant": null
+        },
+        {
+          "target": "gas",
+          "raw_columns": [
+            "COValue"
+          ],
+          "transform": "COValue / 1000.0 — normalises the raw CO sensor count into [0, 1] using the documented saturation reference.",
+          "constant": null
+        },
+        {
+          "target": "smoke",
+          "raw_columns": [
+            "MOX1",
+            "MOX2",
+            "MOX3",
+            "MOX4"
+          ],
+          "transform": "mean(MOX1..MOX4) / 1000.0 — averaged MOX array",
+          "constant": null
+        },
+        {
+          "target": "motion",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "occupancy_state",
+          "raw_columns": [],
+          "transform": "no occupancy evidence in this CSV",
+          "constant": "unknown"
+        },
+        {
+          "target": "position_zone",
+          "raw_columns": [],
+          "transform": "no spatial evidence in this CSV",
+          "constant": "unknown"
+        },
+        {
+          "target": "occupancy_confidence",
+          "raw_columns": [],
+          "transform": "no occupancy evidence in this CSV",
+          "constant": 0.0
+        }
+      ],
+      "notes": "Same column layout as the reference CSV; only sensor_group/device_id differ."
+    },
+    {
+      "source_id": "database_pos.csv",
+      "description": "Wide-form occupancy CSV with one column per room. Each row must be unpivoted into one schema row per non-null cell.",
+      "raw_columns": [
+        "datetime",
+        "Living room",
+        "Bedroom",
+        "Bathroom",
+        "Kitchen",
+        "Hallway"
+      ],
+      "mappings": [
+        {
+          "target": "event_ts",
+          "raw_columns": [
+            "datetime"
+          ],
+          "transform": "parse ISO8601 with offset, convert to UTC",
+          "constant": null
+        },
+        {
+          "target": "device_id",
+          "raw_columns": [
+            "Living room",
+            "Bedroom",
+            "Bathroom",
+            "Kitchen",
+            "Hallway"
+          ],
+          "transform": "f'ds_database_pos:{room}' — synthetic per-room device id so the room dimension is preserved when joined with environment streams.",
+          "constant": null
+        },
+        {
+          "target": "room",
+          "raw_columns": [
+            "Living room",
+            "Bedroom",
+            "Bathroom",
+            "Kitchen",
+            "Hallway"
+          ],
+          "transform": "wide -> long: column header normalised to canonical snake_case ('Living room' -> 'living_room').",
+          "constant": null
+        },
+        {
+          "target": "sensor_group",
+          "raw_columns": [],
+          "transform": "",
+          "constant": "occupancy"
+        },
+        {
+          "target": "position_zone",
+          "raw_columns": [],
+          "transform": "same value as room",
+          "constant": null
+        },
+        {
+          "target": "occupancy_state",
+          "raw_columns": [
+            "Living room",
+            "Bedroom",
+            "Bathroom",
+            "Kitchen",
+            "Hallway"
+          ],
+          "transform": "cell == 1.0 -> 'present'; cell == 0.0 -> 'absent'; blank cell is dropped (the row collapses to no event for that room).",
+          "constant": null
+        },
+        {
+          "target": "occupancy_confidence",
+          "raw_columns": [
+            "Living room",
+            "Bedroom",
+            "Bathroom",
+            "Kitchen",
+            "Hallway"
+          ],
+          "transform": "1.0 when the cell is 0.0 or 1.0 (hard label)",
+          "constant": null
+        },
+        {
+          "target": "temperature",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "humidity",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "gas",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "smoke",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "light",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        },
+        {
+          "target": "motion",
+          "raw_columns": [],
+          "transform": "not present in source",
+          "constant": null
+        }
+      ],
+      "notes": "Wide-form CSV: cells are unpivoted so each non-null occupancy label becomes its own row. Blank cells indicate 'no observation' for that room at that timestamp and are dropped, not zero-filled."
+    }
+  ],
+  "live_json_mappings": [
+    {
+      "target": "event_ts",
+      "json_path": "$.timestamp",
+      "transform": "ISO8601 -> UTC. Falls back to ingestion-time `now()` if the publisher omits the field.",
+      "constant": null
+    },
+    {
+      "target": "device_id",
+      "json_path": "$.device_id",
+      "transform": "passthrough required string",
+      "constant": null
+    },
+    {
+      "target": "room",
+      "json_path": "$.room",
+      "transform": "lower / strip / replace ' '->'_'. Unknown labels are remapped to 'unknown'.",
+      "constant": null
+    },
+    {
+      "target": "sensor_group",
+      "json_path": "",
+      "transform": "constant 'fused'",
+      "constant": "fused"
+    },
+    {
+      "target": "temperature",
+      "json_path": "$.temperature",
+      "transform": "passthrough °C",
+      "constant": null
+    },
+    {
+      "target": "humidity",
+      "json_path": "$.humidity",
+      "transform": "passthrough %",
+      "constant": null
+    },
+    {
+      "target": "gas",
+      "json_path": "$.gas",
+      "transform": "passthrough — ESP32 publishes the already-normalised [0, 1] indicator. Values outside [0, 1.5] are clipped and flagged as sensor faults.",
+      "constant": null
+    },
+    {
+      "target": "smoke",
+      "json_path": "$.smoke",
+      "transform": "passthrough already-normalised [0, 1] indicator",
+      "constant": null
+    },
+    {
+      "target": "light",
+      "json_path": "$.light",
+      "transform": "passthrough lux value",
+      "constant": null
+    },
+    {
+      "target": "motion",
+      "json_path": "$.motion",
+      "transform": "bool -> 0/1; missing -> raise is_missing_motion",
+      "constant": null
+    },
+    {
+      "target": "occupancy_state",
+      "json_path": "",
+      "transform": "if motion is True: 'present' (low-confidence). else if motion is False: 'absent' (low-confidence). else: 'unknown' and raise is_missing_occupancy.",
+      "constant": null
+    },
+    {
+      "target": "position_zone",
+      "json_path": "$.room",
+      "transform": "reuse normalised room as the position zone",
+      "constant": null
+    },
+    {
+      "target": "occupancy_confidence",
+      "json_path": "",
+      "transform": "0.5 when occupancy_state is derived from motion; 0.0 when motion is missing.",
+      "constant": null
+    }
+  ]
+}

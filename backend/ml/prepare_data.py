@@ -1,226 +1,195 @@
-"""Prepare unified anomaly-detection dataset for training.
+"""Prepare contextual training matrix from unified data sources.
 
-Source datasets:
-1) external gas-monitoring CSV(s)               -- real sensor readings
-2) (OPT-IN) simulator/data/sensors_dataset.json -- light/motion/temperature only
+Pipeline:
+1. `data_unification.load_unified` joins env CSVs with PIR occupancy and
+   the simulator JSON into one chronologically sorted frame.
+2. Each row is converted to a feature vector by `feature_builder.build_feature_row`,
+   guaranteeing parity with online inference.
+3. The resulting matrix X is split chronologically (train / val / test)
+   and a `StandardScaler` is fit on the train portion only -- never on
+   the full set -- so evaluation metrics are not leaked-into.
+4. Proxy labels are computed on raw physical values (NOT on scaled
+   features) for explicit baseline comparison and `train.py` reporting.
 
-Base feature space (raw, unscaled):
-[temperature, light, motion, gas, smoke]
+Outputs (under `backend/ml/`):
+- `data.npy`           scaled feature matrix (full chronological order)
+- `labels.npy`         proxy labels in {-1, +1}, raw-domain rules
+- `splits.npy`         per-row split assignment {0=train, 1=val, 2=test}
+- `scaler.pkl`         fitted StandardScaler
+- `feature_manifest.json`  schema version, feature names, dataset shape
 
-Engineered features appended (raw, unscaled):
-[delta_temp, rolling_mean_temp_window_5]
-
-Outputs (all written to backend/ml/):
-- data.npy    -- StandardScaler-transformed feature matrix
-- labels.npy  -- rule-based proxy labels in {-1, +1} aligned to data.npy rows
-- scaler.pkl  -- fitted StandardScaler reused at inference
-
-Why labels are computed BEFORE scaling
---------------------------------------
-Domain rules (e.g. "temperature > 35 C") are expressed in physical units.
-Applying them to standardized features (mean 0 / std 1) is a category error:
-"35" in z-score space is ~35 standard deviations from the mean and would label
-zero rows as anomalies. Labels MUST be derived from raw values; the scaled
-matrix is then only used for the model's input.
-
-Why simulator rows are excluded from ML by default (USE_SIMULATOR_DATA=False)
-----------------------------------------------------------------------------
-The simulator dataset only carries [temperature, light, motion]; in earlier
-revisions we synthesized gas/smoke as `0.15 * temperature + noise` and
-`0.08 * temperature + noise` to keep the schema fixed. That created a
-deterministic correlation between temperature and gas/smoke that does not
-exist at inference time, where gas/smoke arrive independently from the
-device. Training on those rows imprinted a fake correlation onto the model.
-Default is OFF; set USE_SIMULATOR_DATA=true ONLY if you understand the
-distribution-shift consequence and document it in the thesis.
+Methodology note for the thesis defense
+---------------------------------------
+The proxy labels are derived from raw threshold rules (gas, smoke,
+delta_temp, occupancy mismatch). They serve TWO independent purposes:
+(a) compute a baseline F1 for hand-crafted rules, and (b) provide a
+sanity ceiling for the unsupervised models. The model is NOT trained
+against these labels -- IsolationForest and LOF are unsupervised. The
+training pipeline only USES `X_train` (no labels). This keeps the
+research positioning consistent: contextual unsupervised models with a
+rule-baseline comparison.
 """
 
 from __future__ import annotations
 
-import csv
 import json
-import os
+import logging
 from pathlib import Path
 
-import joblib  # pyright: ignore[reportMissingImports]
-import numpy as np  # pyright: ignore[reportMissingImports]
-from sklearn.preprocessing import StandardScaler  # pyright: ignore[reportMissingImports]
+import joblib
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+
+from ml.data_unification import UnificationConfig, iter_feature_dicts, load_unified
+from ml.feature_builder import build_feature_row
+from ml.feature_schema import FEATURE_NAMES, NUM_FEATURES, SCHEMA_VERSION
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 ML_DIR = Path(__file__).resolve().parent
-SENSORS_JSON_PATH = PROJECT_ROOT / "simulator" / "data" / "sensors_dataset.json"
-# External CSV path is configurable via DATA_PATH for reproducible runs across
-# machines. No machine-specific path is hardcoded.
-DATA_PATH = os.getenv("DATA_PATH", "data/default_dataset.csv")
-USE_SIMULATOR_DATA = os.getenv("USE_SIMULATOR_DATA", "false").lower() in {
-    "1",
-    "true",
-    "yes",
-}
-
-# Domain anomaly thresholds expressed in raw physical units. These are the
-# same boundaries used by the alert engine's rules; using them as proxy
-# labels measures how well IsolationForest agrees with hand-crafted rules
-# (the limitation is documented in train.py).
-TEMP_ANOMALY_C = 35.0
-GAS_ANOMALY = 0.6
-SMOKE_ANOMALY = 0.5
-DELTA_TEMP_ANOMALY_C = 5.0
+DATA_PATH = ML_DIR / "data.npy"
+LABELS_PATH = ML_DIR / "labels.npy"
+SPLITS_PATH = ML_DIR / "splits.npy"
+SCALER_PATH = ML_DIR / "scaler.pkl"
+MANIFEST_PATH = ML_DIR / "feature_manifest.json"
 
 
-def _safe_float(value: object, default: float = 0.0) -> float:
-    try:
-        if value is None:
-            return default
-        return float(value if isinstance(value, (int, float, str)) else default)
-    except (TypeError, ValueError):
-        return default
+# Proxy-label thresholds are derived adaptively from the train slice
+# so they respect the dataset's actual sensor scale (MOX/CO units vary
+# wildly between hardware). The percentile is conservative enough to
+# leave most readings as "normal", which makes the rule-baseline a
+# meaningful comparison target rather than the majority class.
+PROXY_QUANTILE = 0.99
+CONTEXT_QUANTILE = 0.95  # softer threshold used only with context residuals
 
 
-def _load_sensors_rows(path: Path) -> list[list[float]]:
-    """Load simulator JSON rows. Used only when USE_SIMULATOR_DATA is True."""
-    with path.open("r", encoding="utf-8") as f:
-        payload = json.load(f)
+def _proxy_labels(matrix: np.ndarray, *, train_mask: np.ndarray) -> tuple[np.ndarray, dict]:
+    """Compute rule-based proxy labels in {-1 (anomaly), +1 (normal)}.
 
-    rows: list[list[float]] = []
-    for point in payload.get("data", []):
-        temperature = _safe_float(point.get("temperature"))
-        light = _safe_float(point.get("light"))
-        motion = 1.0 if bool(point.get("motion")) else 0.0
-        # Honest absence of data: simulator has no gas/smoke channels. We do
-        # NOT synthesize them as a function of temperature anymore -- that
-        # introduced train/inference distribution shift. Zero is an honest
-        # null marker because ingestion also defaults missing gas/smoke to 0.
-        gas = 0.0
-        smoke = 0.0
-        rows.append([temperature, light, motion, gas, smoke])
-    return rows
+    Per-channel percentile thresholds are fit on the TRAIN slice so the
+    test set is never used to define the rule. The label rule is the
+    union of:
+      - per-channel exceedances at p99 (univariate outliers)
+      - large temperature deltas (>4 deg C / 5 min)
+      - context-aware residuals: motion at night, OR gas above p95
+        WITH no detected occupancy (the rule expressing the thesis's
+        contextual hypothesis).
 
-
-def _iter_external_csv_files(external_path: Path) -> list[Path]:
-    if external_path.is_file() and external_path.suffix.lower() == ".csv":
-        return [external_path]
-    if not external_path.exists():
-        raise FileNotFoundError(f"External dataset path does not exist: {external_path}")
-    if not external_path.is_dir():
-        raise ValueError(f"External dataset path must be CSV file or directory: {external_path}")
-    return sorted(external_path.glob("*.csv"))
-
-
-def _load_external_rows(external_path: Path) -> list[list[float]]:
-    csv_files = _iter_external_csv_files(external_path)
-    if not csv_files:
-        raise FileNotFoundError(f"No CSV files found in external dataset path: {external_path}")
-
-    rows: list[list[float]] = []
-    for csv_path in csv_files:
-        with csv_path.open("r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for item in reader:
-                temperature = _safe_float(item.get("temperature"))
-
-                # The external dataset has no light field; use a normalized proxy derived
-                # from CO2CosIRValue to keep physical meaning while preserving schema.
-                co2_cosir = _safe_float(item.get("CO2CosIRValue"))
-                light = co2_cosir / 1024.0
-
-                motion = 0.0
-                gas = _safe_float(item.get("COValue"))
-                smoke = float(
-                    np.mean(
-                        [
-                            _safe_float(item.get("MOX1")),
-                            _safe_float(item.get("MOX2")),
-                            _safe_float(item.get("MOX3")),
-                            _safe_float(item.get("MOX4")),
-                        ]
-                    )
-                )
-                rows.append([temperature, light, motion, gas, smoke])
-    return rows
-
-
-def _append_engineered_features(X_base: np.ndarray) -> np.ndarray:
-    temperatures = X_base[:, 0]
-    delta_temp = np.diff(temperatures, prepend=temperatures[0])
-
-    rolling_mean_temp = np.zeros_like(temperatures)
-    for i in range(len(temperatures)):
-        start = max(0, i - 4)
-        rolling_mean_temp[i] = np.mean(temperatures[start : i + 1])
-
-    return np.column_stack([X_base, delta_temp, rolling_mean_temp])
-
-
-def _rule_labels_from_raw(X_raw: np.ndarray) -> np.ndarray:
-    """Compute rule-based proxy labels on RAW (unscaled) feature matrix.
-
-    Feature order: [temperature, light, motion, gas, smoke, delta_temp, rolling_mean_temp]
-
-    Returns: int array in {-1, +1} where -1 marks anomaly, +1 marks normal.
-    Aligned 1:1 with the rows of X_raw.
+    Returns the label array and the dict of thresholds for the manifest.
     """
-    temperature = X_raw[:, 0]
-    gas = X_raw[:, 3]
-    smoke = X_raw[:, 4]
-    delta_temp = X_raw[:, 5]
+    from ml.feature_schema import FEATURE_INDEX as IDX
 
-    rule_anomaly = (
-        (temperature > TEMP_ANOMALY_C)
-        | (gas > GAS_ANOMALY)
-        | (smoke > SMOKE_ANOMALY)
-        | (np.abs(delta_temp) > DELTA_TEMP_ANOMALY_C)
+    temp = matrix[:, IDX["temperature"]]
+    gas = matrix[:, IDX["gas"]]
+    smoke = matrix[:, IDX["smoke"]]
+    humidity = matrix[:, IDX["humidity"]]
+    delta_temp = matrix[:, IDX["delta_temperature_5m"]]
+    motion_night = matrix[:, IDX["motion_at_night"]]
+    any_motion = matrix[:, IDX["any_motion"]]
+    occupancy = matrix[:, IDX["occupancy_total"]]
+
+    train = matrix[train_mask]
+    thresholds = {
+        "temperature_high": float(np.quantile(train[:, IDX["temperature"]], PROXY_QUANTILE)),
+        "gas_high": float(np.quantile(train[:, IDX["gas"]], PROXY_QUANTILE)),
+        "smoke_high": float(np.quantile(train[:, IDX["smoke"]], PROXY_QUANTILE)),
+        "humidity_high": float(np.quantile(train[:, IDX["humidity"]], PROXY_QUANTILE)),
+        "humidity_low": float(np.quantile(train[:, IDX["humidity"]], 1.0 - PROXY_QUANTILE)),
+        "gas_context": float(np.quantile(train[:, IDX["gas"]], CONTEXT_QUANTILE)),
+        "delta_temp_c": 4.0,
+        "proxy_quantile": PROXY_QUANTILE,
+        "context_quantile": CONTEXT_QUANTILE,
+    }
+
+    univariate = (
+        (temp > thresholds["temperature_high"])
+        | (gas > thresholds["gas_high"])
+        | (smoke > thresholds["smoke_high"])
+        | (humidity < thresholds["humidity_low"])
+        | (humidity > thresholds["humidity_high"])
+        | (np.abs(delta_temp) > thresholds["delta_temp_c"])
     )
-    y = np.ones(len(X_raw), dtype=int)
-    y[rule_anomaly] = -1
-    return y
+    contextual = (motion_night > 0.5) | (
+        (gas > thresholds["gas_context"]) & (any_motion < 0.5) & (occupancy <= 0)
+    )
+    is_anomaly = univariate | contextual
+    y = np.ones(matrix.shape[0], dtype=np.int64)
+    y[is_anomaly] = -1
+    return y, thresholds
+
+
+def _chronological_split(n_rows: int, *, train: float = 0.6, val: float = 0.2) -> np.ndarray:
+    splits = np.full(n_rows, 2, dtype=np.int8)  # default = test
+    n_train = int(n_rows * train)
+    n_val = int(n_rows * val)
+    splits[:n_train] = 0
+    splits[n_train : n_train + n_val] = 1
+    return splits
 
 
 def main() -> None:
-    np.random.seed(42)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    cfg = UnificationConfig.from_env()
+    logger.info(
+        "loading unified dataset (env_ref=%s env_gas=%s pos=%s sim=%s stride=%s)",
+        cfg.env_ref_csv,
+        cfg.env_gas_csv,
+        cfg.pos_csv,
+        cfg.simulator_json,
+        cfg.sample_stride,
+    )
+    df = load_unified(cfg)
+    logger.info("unified frame rows=%d", len(df))
 
-    external_path = Path(DATA_PATH)
-    external_rows = _load_external_rows(external_path)
+    raw_rows: list[list[float]] = []
+    for kwargs in iter_feature_dicts(df):
+        raw_rows.append(build_feature_row(**kwargs))
 
-    sensors_rows: list[list[float]] = []
-    if USE_SIMULATOR_DATA:
-        # Opt-in only. See module docstring for the distribution-shift caveat.
-        sensors_rows = _load_sensors_rows(SENSORS_JSON_PATH)
+    X_raw = np.asarray(raw_rows, dtype=np.float64)
+    if X_raw.shape[1] != NUM_FEATURES:
+        raise RuntimeError(
+            f"feature matrix width {X_raw.shape[1]} != schema {NUM_FEATURES}"
+        )
+    logger.info("feature matrix shape=%s features=%d", X_raw.shape, NUM_FEATURES)
 
-    all_rows = sensors_rows + external_rows
-    if not all_rows:
-        raise RuntimeError("No rows collected from datasets.")
-
-    X_base = np.asarray(all_rows, dtype=np.float64)
-    X_raw = _append_engineered_features(X_base)
-
-    # CRITICAL: labels are computed on RAW features so that physical thresholds
-    # (e.g. temperature > 35 C) match the data they are written for. Applying
-    # the same thresholds to scaled values would mark zero rows as anomalies.
-    y = _rule_labels_from_raw(X_raw)
+    splits = _chronological_split(X_raw.shape[0])
+    train_mask = splits == 0
+    if train_mask.sum() < 100:
+        raise RuntimeError(
+            f"Train split too small ({int(train_mask.sum())} rows); check inputs."
+        )
 
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_raw)
+    scaler.fit(X_raw[train_mask])
+    X_scaled = scaler.transform(X_raw)
+
+    y, raw_thresholds = _proxy_labels(X_raw, train_mask=train_mask)
 
     ML_DIR.mkdir(parents=True, exist_ok=True)
-    np.save(ML_DIR / "data.npy", X_scaled)
-    np.save(ML_DIR / "labels.npy", y)
-    joblib.dump(scaler, ML_DIR / "scaler.pkl")
+    np.save(DATA_PATH, X_scaled)
+    np.save(LABELS_PATH, y)
+    np.save(SPLITS_PATH, splits)
+    joblib.dump(scaler, SCALER_PATH)
 
-    n_anom = int((y == -1).sum())
-    print(
-        "Prepared data:",
-        f"sensors_rows={len(sensors_rows)}",
-        f"external_rows={len(external_rows)}",
-        f"total_rows={len(all_rows)}",
-        f"features={X_scaled.shape[1]}",
-        f"rule_anomalies={n_anom} ({n_anom / len(y):.2%})",
-        f"use_simulator_data={USE_SIMULATOR_DATA}",
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "feature_names": list(FEATURE_NAMES),
+        "rows_total": int(X_raw.shape[0]),
+        "rows_train": int(train_mask.sum()),
+        "rows_val": int((splits == 1).sum()),
+        "rows_test": int((splits == 2).sum()),
+        "anomalies_total": int((y == -1).sum()),
+        "raw_thresholds": raw_thresholds,
+    }
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    logger.info(
+        "saved %s rows=%d anomalies=%d (%.2f%%)",
+        DATA_PATH.name,
+        manifest["rows_total"],
+        manifest["anomalies_total"],
+        100.0 * manifest["anomalies_total"] / manifest["rows_total"],
     )
-    print(f"Saved: {ML_DIR / 'data.npy'}")
-    print(f"Saved: {ML_DIR / 'labels.npy'}")
-    print(f"Saved: {ML_DIR / 'scaler.pkl'}")
+    print(json.dumps(manifest, indent=2))
 
 
 if __name__ == "__main__":

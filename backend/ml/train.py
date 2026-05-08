@@ -1,143 +1,243 @@
-"""Train baseline (Z-score) and Isolation Forest anomaly detectors.
+"""Train contextual anomaly detectors: IsolationForest + LocalOutlierFactor.
 
-Inputs (produced by prepare_data.py):
-- backend/ml/data.npy    -- scaled feature matrix
-- backend/ml/labels.npy  -- rule-based proxy labels in {-1, +1}, raw-domain
-- backend/ml/scaler.pkl  -- fitted StandardScaler reused at inference
+Inputs (produced by `prepare_data.py`):
+- `data.npy`               scaled feature matrix in chronological order
+- `labels.npy`             rule-based proxy labels in {-1, +1}
+- `splits.npy`             per-row split assignment {0=train, 1=val, 2=test}
+- `scaler.pkl`             fitted StandardScaler (carried through to inference)
+- `feature_manifest.json`  schema version, feature names, dataset shape
 
-Methodology note (read this before defending the thesis)
---------------------------------------------------------
-Real labeled IoT-anomaly datasets at home scale are unavailable, so we use
-RULE-BASED PROXY LABELS derived from physical thresholds (temperature,
-gas, smoke, delta_temp) computed on the RAW feature matrix in
-prepare_data.py. The metric reported here is therefore the agreement
-between the unsupervised IsolationForest model and a hand-crafted rule
-set -- not detection of unknown failure modes. Strengths and limitations:
+Outputs (overwritten on each run):
+- `model_if.pkl`     IsolationForest trained on the train slice
+- `model_lof.pkl`    LocalOutlierFactor (novelty=True) trained on train slice
+- `model.pkl`        backwards-compat alias = IsolationForest model
+- `feature_manifest.json`  enriched with score-normalization stats and
+                            adaptive-threshold defaults
 
-  + Rules operate in physical units, so labels are interpretable.
-  + Labels are fixed before training; no synthetic perturbation of test
-    samples is applied (which would be circular evaluation).
-  - Perfect agreement would imply the model is redundant with the rules.
-  - The metric does not bound performance on unseen failure modes.
-  - Extension: replace with a labeled benchmark (NAB / SWaT / WADI) for a
-    stronger evaluation.
+Methodology (thesis defense talking points)
+-------------------------------------------
+- The two detectors are unsupervised; they NEVER see labels during fit.
+- Train/val/test are chronological so we never report on a test set
+  that overlaps the training window.
+- Normalization stats (`score_min`, `score_max`) are derived on the
+  TRAIN slice only and frozen in the manifest. They map detector
+  decision_functions to a stable 0-100 anomaly score at inference.
+- The default adaptive threshold is the train-slice 95th percentile of
+  the ensemble score; the inference service may override it per-device
+  with rolling quantiles if enough samples are observed.
+- The rule-based F1 reported below is a BASELINE -- it measures how
+  well a hand-crafted threshold engine matches the same proxy labels.
+  IsolationForest/LOF F1 are reported on the same labels; an honest
+  thesis discussion compares them along with operational metrics
+  (false alerts/day, time-to-detect) computed by `scripts/evaluate.py`.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import joblib
 import numpy as np
-import numpy.typing as npt
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import f1_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
+from sklearn.neighbors import LocalOutlierFactor
+
+from ml.feature_schema import FEATURE_NAMES, NUM_FEATURES, SCHEMA_VERSION
 
 
+logger = logging.getLogger(__name__)
 ML_DIR = Path(__file__).resolve().parent
 DATA_PATH = ML_DIR / "data.npy"
 LABELS_PATH = ML_DIR / "labels.npy"
-MODEL_PATH = ML_DIR / "model.pkl"
-FloatArray = npt.NDArray[np.float64]
-IntArray = npt.NDArray[np.int64]
+SPLITS_PATH = ML_DIR / "splits.npy"
+MANIFEST_PATH = ML_DIR / "feature_manifest.json"
+MODEL_IF_PATH = ML_DIR / "model_if.pkl"
+MODEL_LOF_PATH = ML_DIR / "model_lof.pkl"
+LEGACY_MODEL_PATH = ML_DIR / "model.pkl"
 
 
-def _baseline_zscore_predict(
-    X_train: FloatArray, X_test: FloatArray, threshold: float = 3.0
-) -> np.ndarray:
-    # Z-score is a transparent baseline with closed-form assumptions and no
-    # learned tree structure, useful for thesis comparison against Isolation Forest.
-    mean = X_train.mean(axis=0)
-    std = X_train.std(axis=0)
-    std = np.where(std == 0.0, 1e-8, std)
-    z = (X_test - mean) / std
-    is_anomaly = np.any(np.abs(z) > threshold, axis=1)
-    return np.where(is_anomaly, -1, 1)
+# Ensemble weights -- equal by default; tunable in feature_manifest.json.
+W_IF = 0.5
+W_LOF = 0.5
+# Default threshold is set adaptively so the predicted anomaly rate on
+# the train slice matches the prevalence of proxy anomalies. Falling
+# back to q95 keeps things reasonable when labels are degenerate.
+FALLBACK_TRAIN_QUANTILE = 0.95
 
 
-def _iforest_percentile_predict(scores: np.ndarray, percentile: int) -> tuple[np.ndarray, float]:
-    threshold = float(np.percentile(scores, percentile))
-    pred = np.where(scores < threshold, -1, 1)
-    return pred, threshold
+def _normalize(scores: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    """Map raw scores (lower = more normal) to 0-100 (higher = more anomalous)."""
+    rng = hi - lo
+    if rng <= 1e-12:
+        return np.zeros_like(scores)
+    inv = (hi - scores) / rng  # 1.0 = max anomaly, 0.0 = max normal
+    return np.clip(inv * 100.0, 0.0, 100.0)
 
 
-def _print_metrics(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    # sklearn's type stubs can be stricter than runtime API for zero_division.
-    precision = precision_score(y_true, y_pred, pos_label=-1, zero_division=cast(Any, 0))
-    recall = recall_score(y_true, y_pred, pos_label=-1, zero_division=cast(Any, 0))
-    f1 = f1_score(y_true, y_pred, pos_label=-1, zero_division=cast(Any, 0))
-    print(f"{name}:")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1: {f1:.4f}")
-    print()
+def _baseline_rule_predictions(y: np.ndarray) -> np.ndarray:
+    """Pretend the rule labels themselves are the rule baseline output.
+
+    `prepare_data._proxy_labels` IS the rule engine; treating its output
+    as predictions yields perfect recall against itself (F1=1.0) -- not
+    informative on its own. The reason we still report it is that the
+    same labels are used as ground truth for IF/LOF, so IF/LOF metrics
+    must be interpreted as agreement-with-rules. See the docstring at
+    the top of this file for the methodology caveat.
+    """
+    return y.copy()
+
+
+def _print_metrics(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    precision = precision_score(y_true, y_pred, pos_label=-1, zero_division=0)
+    recall = recall_score(y_true, y_pred, pos_label=-1, zero_division=0)
+    f1 = f1_score(y_true, y_pred, pos_label=-1, zero_division=0)
+    print(f"{name:32s} precision={precision:.3f} recall={recall:.3f} f1={f1:.3f}")
+    return {
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+    }
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not DATA_PATH.exists():
-        raise FileNotFoundError(f"Missing prepared data: {DATA_PATH}. Run prepare_data.py first.")
-    if not LABELS_PATH.exists():
+        raise FileNotFoundError(f"{DATA_PATH} missing -- run prepare_data.py first.")
+    if not MANIFEST_PATH.exists():
         raise FileNotFoundError(
-            f"Missing labels: {LABELS_PATH}. Re-run prepare_data.py to regenerate "
-            "labels.npy (rules are evaluated on raw values there)."
+            f"{MANIFEST_PATH} missing -- run prepare_data.py first."
         )
 
-    X = cast(FloatArray, np.load(DATA_PATH))
-    y = cast(IntArray, np.load(LABELS_PATH))
-    if X.ndim != 2:
-        raise ValueError("Expected 2D feature matrix in data.npy.")
-    if y.shape[0] != X.shape[0]:
-        raise ValueError(
-            f"Label/feature length mismatch: y={y.shape[0]}, X={X.shape[0]}. "
-            "Regenerate both with prepare_data.py."
+    X = np.load(DATA_PATH)
+    y = np.load(LABELS_PATH)
+    splits = np.load(SPLITS_PATH)
+    if X.shape[1] != NUM_FEATURES:
+        raise RuntimeError(
+            f"data.npy has {X.shape[1]} features, schema expects {NUM_FEATURES}"
         )
 
-    # Split features and labels together so y_test stays aligned to X_test.
-    X_train, X_test, _y_train, y_test = cast(
-        tuple[FloatArray, FloatArray, IntArray, IntArray],
-        train_test_split(X, y, test_size=0.3, random_state=42, shuffle=True),
+    train_mask = splits == 0
+    test_mask = splits == 2
+    X_train, X_test = X[train_mask], X[test_mask]
+    y_train = y[train_mask]
+    y_test = y[test_mask]
+    if X_train.shape[0] < 50:
+        raise RuntimeError(
+            f"Train slice too small: {X_train.shape[0]} rows; "
+            "increase data volume or lower SAMPLE_STRIDE."
+        )
+    train_anomaly_rate = float((y_train == -1).mean())
+    print(
+        f"rows: train={X_train.shape[0]} test={X_test.shape[0]} "
+        f"features={X.shape[1]} train_anomaly_rate={train_anomaly_rate:.3f}"
     )
 
-    num_anomalies = int((y_test == -1).sum())
-    total = len(y_test)
-    print(f"Test samples: {total}")
-    print(f"Rule-based anomalies in test: {num_anomalies} ({num_anomalies / total:.2%})")
-    print()
+    # --- IsolationForest ----------------------------------------------------
+    iforest = IsolationForest(
+        n_estimators=200,
+        contamination="auto",
+        random_state=42,
+        n_jobs=-1,
+    )
+    iforest.fit(X_train)
+    if_train = iforest.decision_function(X_train)
+    if_test = iforest.decision_function(X_test)
 
-    z_pred = _baseline_zscore_predict(X_train, X_test, threshold=3.0)
+    # --- LocalOutlierFactor (novelty mode for inference) -------------------
+    lof = LocalOutlierFactor(
+        n_neighbors=35,
+        novelty=True,
+        contamination="auto",
+        n_jobs=-1,
+    )
+    lof.fit(X_train)
+    lof_train = lof.decision_function(X_train)
+    lof_test = lof.decision_function(X_test)
 
-    # Isolation Forest is suitable for mixed-tabular telemetry because it handles
-    # non-Gaussian distributions and multivariate isolation without labels.
-    # sklearn's stubs may type contamination as str, though float works at runtime.
-    model = IsolationForest(contamination=cast(Any, 0.05), random_state=42)
-    model.fit(X_train)
-    scores = model.decision_function(X_test)
-    print(f"Score range: min={scores.min():.4f}, max={scores.max():.4f}")
-    print()
+    # --- Score normalization ranges (frozen on train) ----------------------
+    if_lo, if_hi = float(np.min(if_train)), float(np.max(if_train))
+    lof_lo, lof_hi = float(np.min(lof_train)), float(np.max(lof_train))
 
-    pred_5, thr_5 = _iforest_percentile_predict(scores, 5)
-    pred_10, thr_10 = _iforest_percentile_predict(scores, 10)
+    if_train_norm = _normalize(if_train, if_lo, if_hi)
+    if_test_norm = _normalize(if_test, if_lo, if_hi)
+    lof_train_norm = _normalize(lof_train, lof_lo, lof_hi)
+    lof_test_norm = _normalize(lof_test, lof_lo, lof_hi)
 
-    # Threshold tuning exposes the precision/recall trade-off: 5% is stricter and
-    # usually improves precision, while 10% is more sensitive and usually improves
-    # recall. In safety-oriented systems, a lower recall may still be acceptable
-    # when each alert triggers costly manual checks and high precision is required.
-    _print_metrics("Z-score", y_test, z_pred)
-    _print_metrics("Isolation Forest (5%)", y_test, pred_5)
-    _print_metrics("Isolation Forest (10%)", y_test, pred_10)
-    print("Thresholds:")
-    print(f"p5={thr_5:.6f}")
-    print(f"p10={thr_10:.6f}")
+    ens_train = W_IF * if_train_norm + W_LOF * lof_train_norm
+    ens_test = W_IF * if_test_norm + W_LOF * lof_test_norm
+    # If the rule-baseline produces a sensible (1-50%) anomaly rate, set
+    # the threshold so the ensemble flags roughly that fraction. This
+    # makes the unsupervised models comparable to the rule baseline
+    # without forcing one to operate at the wrong operating point.
+    if 0.005 <= train_anomaly_rate <= 0.5:
+        threshold_quantile = 1.0 - train_anomaly_rate
+    else:
+        threshold_quantile = FALLBACK_TRAIN_QUANTILE
+    threshold = float(np.quantile(ens_train, threshold_quantile))
+    print(
+        f"adaptive_threshold(train-q{threshold_quantile:.3f})={threshold:.3f} "
+        f"(matched to anomaly_rate={train_anomaly_rate:.3f})"
+    )
 
-    joblib.dump(model, MODEL_PATH)
-    print(f"Saved: {MODEL_PATH}")
+    def _to_pm1(scores: np.ndarray, thr: float) -> np.ndarray:
+        return np.where(scores >= thr, -1, 1)
 
-    # Limitation note for thesis context:
-    # Combining simulator and external gas datasets improves coverage but introduces
-    # domain shift (different sensors/sampling conditions), so threshold tuning and
-    # periodic retraining remain necessary for stable field performance.
+    rule_metrics = _print_metrics(
+        "Rule-baseline (proxy=labels)",
+        y_test,
+        _baseline_rule_predictions(y_test),
+    )
+    if_metrics = _print_metrics(
+        "IsolationForest (alone)",
+        y_test,
+        np.where(iforest.predict(X_test) == -1, -1, 1),
+    )
+    lof_metrics = _print_metrics(
+        "LocalOutlierFactor (alone)",
+        y_test,
+        np.where(lof.predict(X_test) == -1, -1, 1),
+    )
+    ens_metrics = _print_metrics(
+        "IF+LOF ensemble (q95 threshold)",
+        y_test,
+        _to_pm1(ens_test, threshold),
+    )
+
+    # --- Persist artifacts -------------------------------------------------
+    joblib.dump(iforest, MODEL_IF_PATH)
+    joblib.dump(lof, MODEL_LOF_PATH)
+    # Backward-compat: legacy `model.pkl` alias for the existing
+    # `services/anomaly_service.py` consumer that looks up `model.pkl`.
+    joblib.dump(iforest, LEGACY_MODEL_PATH)
+
+    manifest: dict[str, Any] = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    manifest.update(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "feature_names": list(FEATURE_NAMES),
+            "ensemble": {
+                "weights": {"isolation_forest": W_IF, "lof": W_LOF},
+                "score_ranges": {
+                    "isolation_forest": {"lo": if_lo, "hi": if_hi},
+                    "lof": {"lo": lof_lo, "hi": lof_hi},
+                },
+                "default_threshold": threshold,
+                "default_threshold_quantile": threshold_quantile,
+                "train_anomaly_rate": train_anomaly_rate,
+            },
+            "metrics": {
+                "rule_baseline": rule_metrics,
+                "isolation_forest": if_metrics,
+                "lof": lof_metrics,
+                "ensemble": ens_metrics,
+            },
+        }
+    )
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(f"saved {MODEL_IF_PATH.name}, {MODEL_LOF_PATH.name}, manifest updated")
 
 
 if __name__ == "__main__":

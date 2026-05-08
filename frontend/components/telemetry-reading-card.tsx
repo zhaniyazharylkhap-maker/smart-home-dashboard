@@ -112,13 +112,35 @@ export function TelemetryReadingCard({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={risk.badgeVariant}>{risk.label}</Badge>
-              <span className="kpi-value text-sm text-text-dim">
-                {reading.risk_score == null
-                  ? "--"
-                  : Math.round(reading.risk_score)}
-              </span>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-2">
+                <Badge variant={risk.badgeVariant}>{risk.label}</Badge>
+                <span className="kpi-value text-sm text-text-dim">
+                  {reading.risk_score == null
+                    ? "--"
+                    : Math.round(reading.risk_score)}
+                </span>
+              </div>
+              {typeof reading.anomaly_score === "number" ? (
+                <div
+                  className={`text-[10px] uppercase tracking-wide ${
+                    reading.is_contextual_anomaly
+                      ? "text-red-400"
+                      : "text-text-dim"
+                  }`}
+                  title={
+                    (reading.explanation_tokens ?? []).join(" - ") ||
+                    "Stable"
+                  }
+                >
+                  ctx {reading.anomaly_score.toFixed(1)}
+                  {typeof reading.anomaly_threshold === "number" ? (
+                    <span className="ml-1 opacity-60">
+                      / {reading.anomaly_threshold.toFixed(1)}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </CardHeader>

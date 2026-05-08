@@ -1,118 +1,78 @@
+"""Background anomaly sweep.
+
+The primary contextual scoring runs in-line with each MQTT event via
+`services.contextual_service.evaluate_contextual_event`. This module is
+kept as a periodic safety-net that:
+
+- iterates registered devices,
+- ensures `ml.inference.contextual_inference` artifacts are loaded,
+- creates a database alert when a device has been quiet but its last
+  contextual score is above the adaptive threshold AND no open alert
+  of the same type already exists (deduplication identical to the rule
+  engine's path).
+
+The legacy public symbol `anomaly_background_loop` is preserved so
+`backend/app/main.py` does not need to change its import.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-import joblib
-import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Device, Room, Telemetry
+from app.models import Device, Room
+from app.services import contextual_storage
 from core.config import get_settings
 from core.database import SessionLocal
+from ml.inference import contextual_inference
 from services.alert_engine import emit_anomaly_alert
+
 
 logger = logging.getLogger(__name__)
 
 
-ML_DIR = Path(__file__).resolve().parent.parent / "ml"
-MODEL_PATH = ML_DIR / "model.pkl"
-SCALER_PATH = ML_DIR / "scaler.pkl"
-
-
-def _load_artifacts() -> tuple[object | None, object | None]:
-    if not MODEL_PATH.is_file() or not SCALER_PATH.is_file():
-        return None, None
-    try:
-        model = joblib.load(MODEL_PATH)
-        scaler = joblib.load(SCALER_PATH)
-        return model, scaler
-    except Exception:  # noqa: BLE001
-        logger.exception("failed to load ml artifacts from %s", ML_DIR)
-        return None, None
-
-
-def _rows_to_feature_matrix(rows: list[Telemetry]) -> np.ndarray:
-    if not rows:
-        return np.empty((0, 7), dtype=np.float64)
-
-    base: list[list[float]] = []
-    for t in rows:
-        temperature = float(t.temperature or 0.0)
-        light = float(t.light or 0.0)
-        motion = 1.0 if t.motion else 0.0
-        gas = float(t.gas or 0.0)
-        smoke = float(t.smoke or 0.0)
-        base.append([temperature, light, motion, gas, smoke])
-
-    X_base = np.asarray(base, dtype=np.float64)
-    temperatures = X_base[:, 0]
-    delta_temp = np.diff(temperatures, prepend=temperatures[0])
-
-    rolling_mean_temp = np.zeros_like(temperatures)
-    for i in range(len(temperatures)):
-        start = max(0, i - 4)
-        rolling_mean_temp[i] = np.mean(temperatures[start : i + 1])
-
-    return np.column_stack([X_base, delta_temp, rolling_mean_temp])
-
-
-def _detect_device_anomaly(db: Session, device: Device, model: object | None, scaler: object | None) -> tuple[bool, float]:
-    since = datetime.now(timezone.utc) - timedelta(seconds=60)
-    q = (
-        select(Telemetry)
-        .where(Telemetry.device_id == device.id, Telemetry.timestamp >= since)
-        .order_by(Telemetry.timestamp.asc())
-        .limit(200)
-    )
-    rows = list(db.execute(q).scalars().all())
-    if not rows:
-        return False, 0.0
-    if model is None or scaler is None:
-        return False, 0.0
-    try:
-        X = _rows_to_feature_matrix(rows)
-        X_scaled = scaler.transform(X)
-        pred = model.predict(X_scaled)
-        decision = model.decision_function(X_scaled)
-
-        latest_is_anomaly = bool(pred[-1] == -1)
-        latest_score = float(-decision[-1])
-        logger.debug(
-            "anomaly_result device=%s rows=%s anomaly=%s score=%s",
-            device.device_id,
-            len(rows),
-            latest_is_anomaly,
-            latest_score,
-        )
-        return latest_is_anomaly, latest_score
-    except Exception:  # noqa: BLE001
-        logger.exception("anomaly scoring failed for device %s", device.device_id)
-        return False, 0.0
-
-
 def _run_anomaly_iteration() -> None:
-    model, scaler = _load_artifacts()
     settings = get_settings()
-    db = SessionLocal()
+    threshold = float(getattr(settings, "anomaly_score_threshold", 0.75))
+    # Force a load attempt so the next inline event is fast.
+    contextual_inference._get_artifacts()  # type: ignore[attr-defined]
+
+    latest = contextual_storage.latest_per_device()
+    if not latest:
+        return
+    db: Session = SessionLocal()
     try:
-        devs = list(db.execute(select(Device)).scalars().all())
-        for device in devs:
-            anomaly, score = _detect_device_anomaly(db, device, model, scaler)
-            if not anomaly and score <= settings.anomaly_score_threshold:
-                continue
-            room = db.get(Room, device.room_id)
-            if room is None:
-                continue
-            emit_anomaly_alert(db, room, device, score)
+        for ev in latest:
+            try:
+                if not ev.get("is_contextual_anomaly"):
+                    continue
+                score = float(ev.get("anomaly_score") or 0.0)
+                # Convert 0..100 score to 0..1 for the legacy threshold
+                # config knob so existing settings remain meaningful.
+                if (score / 100.0) <= threshold:
+                    continue
+                device = db.execute(
+                    select(Device).where(
+                        Device.device_id == str(ev.get("device_id") or "")
+                    )
+                ).scalar_one_or_none()
+                if device is None:
+                    continue
+                room = db.get(Room, device.room_id) if device.room_id else None
+                if room is None:
+                    continue
+                emit_anomaly_alert(db, room, device, score / 100.0)
+            except Exception:  # noqa: BLE001
+                logger.exception("anomaly iteration: device handling failed")
     finally:
         db.close()
 
 
-async def anomaly_background_loop(interval_sec: float = 10.0) -> None:
+async def anomaly_background_loop(interval_sec: float = 30.0) -> None:
+    """Long-running background coroutine launched from `app.main:lifespan`."""
     while True:
         try:
             await asyncio.sleep(interval_sec)
@@ -122,3 +82,6 @@ async def anomaly_background_loop(interval_sec: float = 10.0) -> None:
             raise
         except Exception:  # noqa: BLE001
             logger.exception("anomaly loop iteration failed")
+
+
+__all__ = ["anomaly_background_loop"]

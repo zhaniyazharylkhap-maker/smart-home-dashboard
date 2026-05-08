@@ -83,6 +83,16 @@ async def lifespan(app: FastAPI):
         _health_status["redis"] = "error"
         raise RuntimeError("Critical dependency failed: Redis bridge unavailable") from e
 
+    # Best-effort artifact preload so the first MQTT event doesn't pay the
+    # joblib.load cost. Failure is non-fatal: inference falls back to
+    # degraded mode and the rule engine continues to operate.
+    try:
+        from ml.inference import contextual_inference
+
+        contextual_inference._get_artifacts()  # noqa: SLF001
+    except Exception:  # noqa: BLE001
+        logger.exception("contextual inference preload failed")
+
     _anomaly_task = asyncio.create_task(anomaly_background_loop())
 
     yield

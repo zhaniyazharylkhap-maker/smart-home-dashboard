@@ -3,6 +3,11 @@ import { useAuthStore } from "@/lib/auth-store";
 import type { LatestTelemetryResponse } from "@/types/telemetry";
 import type {
   AlertRow,
+  AnomalyExplanationsResponse,
+  AnomalyHistoryResponse,
+  AnomalyLiveResponse,
+  BehaviorProfileResponse,
+  CorrelationResponse,
   DashboardStats,
   DeviceRow,
   Room,
@@ -48,6 +53,50 @@ export async function fetchTelemetryHistory(params: {
   if (params.room) sp.set("room", params.room);
   if (params.device_id) sp.set("device_id", params.device_id);
   return apiFetch<TelemetryHistoryResponse>(`/telemetry/history?${sp.toString()}`);
+}
+
+export async function fetchAnomalyLive(): Promise<AnomalyLiveResponse> {
+  return apiFetch<AnomalyLiveResponse>("/anomaly/live");
+}
+
+export async function fetchAnomalyHistory(params: {
+  device_id: string;
+  range?: string;
+  limit?: number;
+}): Promise<AnomalyHistoryResponse> {
+  const sp = new URLSearchParams();
+  sp.set("device_id", params.device_id);
+  if (params.range) sp.set("range", params.range);
+  if (params.limit) sp.set("limit", String(params.limit));
+  return apiFetch<AnomalyHistoryResponse>(`/anomaly/history?${sp.toString()}`);
+}
+
+export async function fetchAnomalyExplanations(
+  range = "24h"
+): Promise<AnomalyExplanationsResponse> {
+  const sp = new URLSearchParams();
+  sp.set("range", range);
+  return apiFetch<AnomalyExplanationsResponse>(`/anomaly/explanations?${sp.toString()}`);
+}
+
+export async function fetchSensorCorrelation(
+  range = "24h"
+): Promise<CorrelationResponse> {
+  const sp = new URLSearchParams();
+  sp.set("range", range);
+  return apiFetch<CorrelationResponse>(`/anomaly/correlation?${sp.toString()}`);
+}
+
+export async function fetchBehaviorProfile(params: {
+  metric: string;
+  room?: string;
+  days?: number;
+}): Promise<BehaviorProfileResponse> {
+  const sp = new URLSearchParams();
+  sp.set("metric", params.metric);
+  if (params.room) sp.set("room", params.room);
+  if (params.days) sp.set("days", String(params.days));
+  return apiFetch<BehaviorProfileResponse>(`/anomaly/profile?${sp.toString()}`);
 }
 
 export function getWsUrl(): string {

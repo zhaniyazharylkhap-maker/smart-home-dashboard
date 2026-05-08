@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchLatestTelemetry, getWsUrl } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
-import type { TelemetryReading, WsMessage } from "@/types/telemetry";
+import type {
+  ContextualAnomalyEvent,
+  TelemetryReading,
+  WsMessage,
+} from "@/types/telemetry";
 
 type LiveAlert = {
   id: number;
@@ -26,6 +30,22 @@ export type LiveTelemetryPoint = {
   value: number | null;
   risk_score: number | null;
   anomaly: boolean;
+  anomaly_score: number | null;
+  anomaly_threshold: number | null;
+  is_contextual_anomaly: boolean;
+  explanation_tokens: string[];
+  model_version: string | null;
+};
+
+export type LiveAnomalyDeviceState = {
+  device_id: string;
+  room: string;
+  anomaly_score: number;
+  anomaly_threshold: number;
+  is_contextual_anomaly: boolean;
+  explanation_tokens: string[];
+  model_version: string | null;
+  updated_at: string;
 };
 
 type ThroughputStats = {
@@ -114,6 +134,12 @@ export function useLiveTelemetry() {
     max: null,
   });
   const [timeline, setTimeline] = useState<LiveTelemetryPoint[]>([]);
+  const [anomalyByDevice, setAnomalyByDevice] = useState<
+    Record<string, LiveAnomalyDeviceState>
+  >({});
+  const [recentAnomalyEvents, setRecentAnomalyEvents] = useState<
+    ContextualAnomalyEvent[]
+  >([]);
   const [performanceSummary, setPerformanceSummary] = useState<PerformanceSnapshot>({
     avg_latency_ms: null,
     max_latency_ms: null,
@@ -248,17 +274,57 @@ export function useLiveTelemetry() {
               max: throughputMax,
             });
 
-            const anomaly =
+            const ruleAnomaly =
               (reading.risk_level ?? "SAFE").toUpperCase() !== "SAFE" ||
               (reading.risk_score ?? 0) >= 70;
-            if (typeof reading.risk_score === "number" && Number.isFinite(reading.risk_score)) {
+            const contextualAnomaly = Boolean(reading.is_contextual_anomaly);
+            const anomaly = ruleAnomaly || contextualAnomaly;
+            const ctxScore =
+              typeof reading.anomaly_score === "number"
+                ? reading.anomaly_score
+                : null;
+            if (
+              typeof reading.anomaly_score === "number" &&
+              Number.isFinite(reading.anomaly_score)
+            ) {
+              const nextScores = [
+                ...recentScoresRef.current,
+                reading.anomaly_score,
+              ].slice(-SCORE_WINDOW);
+              recentScoresRef.current = nextScores;
+              // Dynamic threshold mirrors the backend p95 logic and
+              // exposes its contour even before the user requests an
+              // explicit anomaly endpoint.
+              setAnomalyThreshold(percentile(nextScores, 95));
+            } else if (
+              typeof reading.risk_score === "number" &&
+              Number.isFinite(reading.risk_score)
+            ) {
               const nextScores = [...recentScoresRef.current, reading.risk_score].slice(
                 -SCORE_WINDOW
               );
               recentScoresRef.current = nextScores;
-              // Dynamic threshold from recent score distribution improves
-              // interpretability versus hardcoded constants.
-              setAnomalyThreshold(percentile(nextScores, 10));
+              setAnomalyThreshold(percentile(nextScores, 95));
+            }
+            if (
+              typeof reading.anomaly_score === "number" &&
+              typeof reading.anomaly_threshold === "number"
+            ) {
+              setAnomalyByDevice((prev) => ({
+                ...prev,
+                [reading.device_id]: {
+                  device_id: reading.device_id,
+                  room: reading.room,
+                  anomaly_score: reading.anomaly_score ?? 0,
+                  anomaly_threshold: reading.anomaly_threshold ?? 0,
+                  is_contextual_anomaly: Boolean(
+                    reading.is_contextual_anomaly
+                  ),
+                  explanation_tokens: reading.explanation_tokens ?? [],
+                  model_version: reading.model_version ?? null,
+                  updated_at: reading.timestamp,
+                },
+              }));
             }
             setTimeline((prev) =>
               [
@@ -270,6 +336,14 @@ export function useLiveTelemetry() {
                   value: reading.temperature,
                   risk_score: reading.risk_score ?? null,
                   anomaly,
+                  anomaly_score: ctxScore,
+                  anomaly_threshold:
+                    typeof reading.anomaly_threshold === "number"
+                      ? reading.anomaly_threshold
+                      : null,
+                  is_contextual_anomaly: contextualAnomaly,
+                  explanation_tokens: reading.explanation_tokens ?? [],
+                  model_version: reading.model_version ?? null,
                 },
               ].slice(-1200)
             );
@@ -303,6 +377,12 @@ export function useLiveTelemetry() {
             const alert = toLiveAlert(msg.payload);
             if (!alert) return;
             setRecentAlerts((prev) => [alert, ...prev].slice(0, 8));
+          }
+          if (msg.type === "contextual_anomaly" && msg.payload) {
+            const ev = msg.payload as ContextualAnomalyEvent;
+            setRecentAnomalyEvents((prev) =>
+              [ev, ...prev].slice(0, 24)
+            );
           }
           const totalMessages = nextTotalMessages;
           const droppedMessages = performanceRef.current.dropped_messages;
@@ -379,5 +459,7 @@ export function useLiveTelemetry() {
     anomalyThreshold,
     recentAlerts,
     timeline,
+    anomalyByDevice,
+    recentAnomalyEvents,
   };
 }
