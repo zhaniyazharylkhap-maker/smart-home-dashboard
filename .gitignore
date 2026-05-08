@@ -24,3 +24,11 @@ out/
 
 # Local test databases
 *.db
+
+# ML artifacts (regenerate via `cd backend && python -m ml.prepare_data && python -m ml.train`)
+# Pickled models and numpy dumps are large and reproducible; keep manifest
+# JSONs (they're small and document the operating point of the trained
+# artifact). The legacy `model.pkl` alias is also tracked-out.
+backend/ml/*.pkl
+backend/ml/*.npy
+backend/ml/__pycache__/

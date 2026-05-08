@@ -21,18 +21,26 @@ def _norm_temperature(temp: float | None) -> float:
     return _clamp(((temp - 24.0) / 11.0) * 100.0)
 
 
+# Sensor-unit calibration constants. Telemetry arrives on the MOX/CO
+# scale shared by training CSVs and the simulator (gas ~50-300, smoke
+# ~50-700). The denominators below are the rule-engine "max" values from
+# `alert_engine._effective_thresholds`; staying in lockstep keeps the
+# risk score and the rule engine reasoning about the same operating
+# point. If you re-tune one, re-tune the other.
+_GAS_FULL_RISK = 200.0
+_SMOKE_FULL_RISK = 250.0
+
+
 def _norm_smoke(smoke: float | None) -> float:
     if smoke is None:
         return 0.0
-    # default backend critical threshold ~0.25
-    return _clamp((smoke / 0.25) * 100.0)
+    return _clamp((smoke / _SMOKE_FULL_RISK) * 100.0)
 
 
 def _norm_gas(gas: float | None) -> float:
     if gas is None:
         return 0.0
-    # default backend critical threshold ~0.5
-    return _clamp((gas / 0.5) * 100.0)
+    return _clamp((gas / _GAS_FULL_RISK) * 100.0)
 
 
 def _motion_factor(motion: bool | None) -> float:

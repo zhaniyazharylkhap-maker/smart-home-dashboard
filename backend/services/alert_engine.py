@@ -21,7 +21,9 @@ _THRESHOLD_CACHE_TTL_SECONDS = 60
 
 
 def _effective_thresholds(db: Session, room_id: int, device_id: int) -> Threshold:
-    cache_key = f"thresholds:{device_id}"
+    # Cache namespace bumped to v2 after the migration-008 unit rescale
+    # so any in-flight ppm-fraction values left in Redis are ignored.
+    cache_key = f"thresholds:v2:{device_id}"
     try:
         cached_raw = get_redis().get(cache_key)
         if cached_raw:
@@ -46,11 +48,20 @@ def _effective_thresholds(db: Session, room_id: int, device_id: int) -> Threshol
     room_row = db.execute(
         select(Threshold).where(Threshold.room_id == room_id)
     ).scalar_one_or_none()
+    # Threshold calibration: gas/smoke values arrive on the MOX/CO sensor
+    # scale used by the training CSVs (gas ~50-300, smoke ~50-700) and by
+    # the simulator's _ROOM_BASELINES. Values below were derived from
+    # `feature_manifest.json#raw_thresholds` (train-slice p99) with a
+    # safety margin so the rule engine fires on the same operating point
+    # as the proxy-label rules used by the ML pipeline.
+    #     temperature_max: physical safety threshold (unchanged at 30C)
+    #     gas_max  ~= 200 (manifest gas_high p99 was 274)
+    #     smoke_max ~= 250 (manifest smoke_high p99 was 716)
     merged = Threshold(
         room_id=room_id,
         temperature_max=30.0,
-        gas_max=0.5,
-        smoke_max=0.25,
+        gas_max=200.0,
+        smoke_max=250.0,
         humidity_min=30.0,
         humidity_max=70.0,
         offline_after_minutes=10,

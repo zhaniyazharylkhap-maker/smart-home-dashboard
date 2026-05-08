@@ -44,6 +44,7 @@ inclusion as a thesis appendix.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import subprocess
@@ -55,6 +56,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 import paho.mqtt.client as mqtt
+
+
+# Force line-buffered, immediately-flushed stdout: when this script is
+# invoked through CI / a shell wrapper, stdout is not a TTY and Python's
+# default block buffering hides progress until process exit -- which
+# made earlier runs look hung. `flush=True` everywhere fixes it.
+print = functools.partial(print, flush=True)  # noqa: A001
 
 
 @dataclass
@@ -201,13 +209,17 @@ def main() -> int:
     recovery_rate = recovery_count / recovery_window_seconds
 
     expected_during_outage_at_baseline_rate = baseline_rate * args.outage
-    # Loss is conservatively defined as: messages we *expected* to see during
-    # the outage at the baseline rate, minus messages received in the recovery
-    # window beyond the post-recovery baseline rate (i.e., the queued backlog
-    # the broker/clients flushed after reconnect). With QoS=1 + persistence,
-    # the simulator's outbound queue and the broker's persistence should
-    # deliver these once both reconnect; loss should be near zero.
-    queued_replay = max(0.0, recovery_count - recovery_rate * recovery_window_seconds)
+    # Loss is defined as: messages we *expected* during the outage at the
+    # baseline rate, MINUS the messages flushed as queued backlog after the
+    # broker came back. We estimate the backlog as the recovery-window's
+    # excess throughput vs. the BASELINE rate (NOT vs. recovery_rate -- by
+    # construction `recovery_count == recovery_rate * window`, so comparing
+    # against itself always yields zero replay and inflates loss to 100%).
+    # Excess throughput during recovery is the measurable footprint of the
+    # paho outbound queue + mosquitto persistence draining after reconnect.
+    queued_replay = max(
+        0.0, recovery_count - baseline_rate * recovery_window_seconds
+    )
     loss_estimate = max(
         0.0, expected_during_outage_at_baseline_rate - queued_replay - outage_count
     )

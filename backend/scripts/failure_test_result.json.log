@@ -1,0 +1,6 @@
+/Users/ayauka/smart-home-dashboard/backend/scripts/failure_test.py:81: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+  client = mqtt.Client(
+[exp] FAILED to stop broker: Cannot connect to the Docker daemon at unix:///Users/ayauka/.docker/run/docker.sock. Is the docker daemon running?
+[exp] baseline window: 20s
+[exp] baseline messages=0 rate=0.00 msg/s
+[exp] stopping service 'mqtt' for 25s

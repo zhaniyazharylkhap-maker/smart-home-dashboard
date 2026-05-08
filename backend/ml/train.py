@@ -59,9 +59,15 @@ MODEL_LOF_PATH = ML_DIR / "model_lof.pkl"
 LEGACY_MODEL_PATH = ML_DIR / "model.pkl"
 
 
-# Ensemble weights -- equal by default; tunable in feature_manifest.json.
-W_IF = 0.5
-W_LOF = 0.5
+# Ensemble weights. IsolationForest is a higher-precision detector on
+# this dataset (manifest typically reports IF F1 ~= 0.45, LOF F1 ~= 0.30
+# at native operating points); LOF contributes recall on the long-tail
+# contextual outliers but drags precision down at equal weight. The
+# 0.7/0.3 split favours IF as the principal detector while still
+# admitting LOF's contextual sensitivity. Re-tune empirically per dataset
+# by re-running `scripts/evaluate.py` after each train.
+W_IF = 0.7
+W_LOF = 0.3
 # Default threshold is set adaptively so the predicted anomaly rate on
 # the train slice matches the prevalence of proxy anomalies. Falling
 # back to q95 keeps things reasonable when labels are degenerate.
@@ -77,15 +83,14 @@ def _normalize(scores: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return np.clip(inv * 100.0, 0.0, 100.0)
 
 
-def _baseline_rule_predictions(y: np.ndarray) -> np.ndarray:
-    """Pretend the rule labels themselves are the rule baseline output.
+def _label_self_consistency_predictions(y: np.ndarray) -> np.ndarray:
+    """Return labels-as-predictions; F1=1.0 by construction.
 
-    `prepare_data._proxy_labels` IS the rule engine; treating its output
-    as predictions yields perfect recall against itself (F1=1.0) -- not
-    informative on its own. The reason we still report it is that the
-    same labels are used as ground truth for IF/LOF, so IF/LOF metrics
-    must be interpreted as agreement-with-rules. See the docstring at
-    the top of this file for the methodology caveat.
+    `prepare_data._proxy_labels` IS the rule that produced the labels;
+    feeding its own output back as predictions gives a perfect score.
+    Kept here ONLY as a sanity ceiling -- the meaningful rule baseline
+    (the production alert-engine thresholds) is reported by
+    `scripts/evaluate.py` against the raw test values.
     """
     return y.copy()
 
@@ -185,10 +190,10 @@ def main() -> None:
     def _to_pm1(scores: np.ndarray, thr: float) -> np.ndarray:
         return np.where(scores >= thr, -1, 1)
 
-    rule_metrics = _print_metrics(
-        "Rule-baseline (proxy=labels)",
+    self_consistency_metrics = _print_metrics(
+        "Label self-consistency (F1=1)",
         y_test,
-        _baseline_rule_predictions(y_test),
+        _label_self_consistency_predictions(y_test),
     )
     if_metrics = _print_metrics(
         "IsolationForest (alone)",
@@ -229,7 +234,7 @@ def main() -> None:
                 "train_anomaly_rate": train_anomaly_rate,
             },
             "metrics": {
-                "rule_baseline": rule_metrics,
+                "label_self_consistency": self_consistency_metrics,
                 "isolation_forest": if_metrics,
                 "lof": lof_metrics,
                 "ensemble": ens_metrics,

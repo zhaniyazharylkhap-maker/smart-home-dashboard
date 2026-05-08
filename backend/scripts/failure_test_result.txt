@@ -1,0 +1,39 @@
+/Users/ayauka/smart-home-dashboard/backend/scripts/failure_test.py:89: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+  client = mqtt.Client(
+[counter] connected to localhost:1883, subscribing topic=smarthome/telemetry
+[exp] baseline window: 20s
+[exp] baseline messages=60 rate=3.00 msg/s
+[exp] stopping service 'mqtt' for 25s
+[exp] outage messages received during downtime=0 (expected: 0)
+[exp] starting service 'mqtt'
+[counter] connected to localhost:1883, subscribing topic=smarthome/telemetry
+
+=== FAILURE INJECTION RESULT ===
+{
+  "started_at_utc": "2026-05-08T10:57:28.558231+00:00",
+  "broker": "localhost:1883",
+  "topic": "smarthome/telemetry",
+  "windows_seconds": {
+    "baseline": 20.0,
+    "outage": 25.0,
+    "recovery": 35.0
+  },
+  "baseline": {
+    "messages": 60,
+    "rate_msg_per_sec": 3.0
+  },
+  "outage": {
+    "messages_received_during_downtime": 0
+  },
+  "recovery": {
+    "recovery_seconds": 5.009,
+    "messages_after_restart": 183,
+    "rate_msg_per_sec": 6.101
+  },
+  "estimated_loss": {
+    "expected_at_baseline_rate": 75.0,
+    "queued_replay_estimate": 93.012,
+    "absolute_loss_estimate": 0.0,
+    "loss_pct": 0.0
+  }
+}

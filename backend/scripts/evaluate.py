@@ -6,14 +6,21 @@ chapter. Run AFTER `prepare_data.py` and `train.py`.
 What it produces (printed and written to JSON for the appendix):
 
 1. Baselines & target model (test slice metrics)
-   - Rule-only          (the proxy-label generator itself)
-   - IsolationForest    (its native predict)
-   - LOF                (novelty-mode predict)
-   - IF + LOF ensemble  (ensemble score >= q95 train threshold)
+   - Label self-consistency  (the proxy-label generator vs itself; F1=1
+     by construction, kept in the table only as a sanity ceiling)
+   - Production rule engine  (the actual `services.alert_engine`
+     thresholds applied to RAW test values; this is what the user
+     actually experiences in the live system)
+   - IsolationForest         (its native predict)
+   - LOF                     (novelty-mode predict)
+   - IF + LOF ensemble       (ensemble score >= manifest threshold)
 2. Ablation: ensemble without the contextual residual block
    (zero out gas_no_occupancy, motion_at_night, humidity_off_profile).
 3. Operational metrics (computed at the test-slice level)
-   - false alerts / day  -- assumed 1 sample per second
+   - false alerts / day
+       * `raw`     -- one count per row that fires
+       * `deduped` -- one count per off->on transition AND per
+                       cooldown window (default 5 min @ 1Hz)
    - median time-to-detect (TTD) in samples for sustained anomalies
    - inference latency p50/p95 over per-row scoring
 
@@ -51,6 +58,17 @@ MANIFEST_PATH = ML_DIR / "feature_manifest.json"
 REPORT_PATH = ML_DIR / "evaluation_report.json"
 
 
+# Production rule engine thresholds (must mirror the defaults in
+# `backend/services/alert_engine.py::_effective_thresholds`). Kept here
+# explicitly so the evaluation script remains a self-contained,
+# CI-friendly snapshot of the rules being benchmarked.
+PROD_RULE_TEMPERATURE_MAX = 30.0
+PROD_RULE_GAS_MAX = 200.0
+PROD_RULE_SMOKE_MAX = 250.0
+PROD_RULE_HUMIDITY_MIN = 30.0
+PROD_RULE_HUMIDITY_MAX = 70.0
+
+
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     return {
         "precision": float(precision_score(y_true, y_pred, pos_label=-1, zero_division=0)),
@@ -67,15 +85,78 @@ def _normalize(scores: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return np.clip(inv * 100.0, 0.0, 100.0)
 
 
+def _production_rule_predictions(X_raw: np.ndarray) -> np.ndarray:
+    """Apply the live alert-engine rules to the RAW test matrix.
+
+    This is the rule baseline a homeowner would actually experience.
+    The proxy labels in `prepare_data._proxy_labels` use train-slice
+    quantiles which are STRICTER than the safety-oriented thresholds
+    used here, so this baseline is expected to under-recall the proxy
+    labels but with high precision.
+    """
+    temperature = X_raw[:, FEATURE_INDEX["temperature"]]
+    humidity = X_raw[:, FEATURE_INDEX["humidity"]]
+    gas = X_raw[:, FEATURE_INDEX["gas"]]
+    smoke = X_raw[:, FEATURE_INDEX["smoke"]]
+    fires = (
+        (temperature > PROD_RULE_TEMPERATURE_MAX)
+        | (gas > PROD_RULE_GAS_MAX)
+        | (smoke > PROD_RULE_SMOKE_MAX)
+        | (humidity < PROD_RULE_HUMIDITY_MIN)
+        | (humidity > PROD_RULE_HUMIDITY_MAX)
+    )
+    return np.where(fires, -1, 1)
+
+
 def _operational_metrics(
-    y_pred_anomaly: np.ndarray, y_true: np.ndarray, samples_per_day: int = 86400
-) -> dict[str, float]:
-    n = len(y_pred_anomaly)
+    y_pred: np.ndarray,
+    y_true: np.ndarray,
+    *,
+    samples_per_day: int = 86400,
+    cooldown_samples: int = 300,
+) -> dict[str, Any]:
+    """Compute false-alert rates with and without alert deduplication.
+
+    `raw` matches the previous metric: every individual prediction
+    counts.  `deduped` collapses sustained alert runs and applies a
+    cooldown window (default 5 minutes at 1Hz), which is what the live
+    UI shows after `_has_open_alert()` deduplication. The deduped rate
+    is the one to quote in the thesis -- the raw rate is reported only
+    for completeness, since it can be off by 100x in either direction
+    depending on the assumed sample rate.
+    """
+    n = len(y_pred)
     if n == 0:
-        return {"false_alerts_per_day": 0.0, "median_ttd_samples": -1.0}
-    false_alerts = int(((y_pred_anomaly == -1) & (y_true == 1)).sum())
+        return {
+            "false_alerts_per_day_raw": 0.0,
+            "false_alerts_per_day_deduped": 0.0,
+            "median_ttd_samples": -1.0,
+            "samples_per_day_assumption": int(samples_per_day),
+            "cooldown_samples": int(cooldown_samples),
+        }
     days = n / samples_per_day if samples_per_day > 0 else 1.0
-    fap = false_alerts / max(days, 1e-9)
+
+    # Raw FAR: every false-positive prediction.
+    false_alerts_raw = int(((y_pred == -1) & (y_true == 1)).sum())
+    fap_raw = false_alerts_raw / max(days, 1e-9)
+
+    # Deduped FAR: count only off->on transitions, AND skip any edge
+    # that arrives within `cooldown_samples` of the previous alert
+    # (mirrors `_has_open_alert` behaviour).
+    is_alert = (y_pred == -1)
+    transitions = np.zeros(n, dtype=bool)
+    if n > 0:
+        transitions[0] = is_alert[0]
+    if n > 1:
+        transitions[1:] = is_alert[1:] & (~is_alert[:-1])
+    last_alert = -10**9
+    deduped_alerts = np.zeros(n, dtype=bool)
+    for i in range(n):
+        if transitions[i] and (i - last_alert) >= cooldown_samples:
+            deduped_alerts[i] = True
+            last_alert = i
+    false_alerts_dedup = int((deduped_alerts & (y_true == 1)).sum())
+    fap_dedup = false_alerts_dedup / max(days, 1e-9)
 
     # Time-to-detect: for each contiguous run of true anomalies,
     # measure how many samples in until the model first flags it.
@@ -89,10 +170,9 @@ def _operational_metrics(
                 run_start = i
         else:
             if in_run:
-                # close the run; locate first detection in this run
                 detected_idx = None
                 for j in range(run_start, i):
-                    if y_pred_anomaly[j] == -1:
+                    if y_pred[j] == -1:
                         detected_idx = j
                         break
                 if detected_idx is not None:
@@ -100,13 +180,16 @@ def _operational_metrics(
                 in_run = False
     if in_run:
         for j in range(run_start, n):
-            if y_pred_anomaly[j] == -1:
+            if y_pred[j] == -1:
                 ttd_samples.append(j - run_start)
                 break
     median_ttd = float(np.median(ttd_samples)) if ttd_samples else -1.0
     return {
-        "false_alerts_per_day": float(round(fap, 3)),
+        "false_alerts_per_day_raw": float(round(fap_raw, 3)),
+        "false_alerts_per_day_deduped": float(round(fap_dedup, 3)),
         "median_ttd_samples": median_ttd,
+        "samples_per_day_assumption": int(samples_per_day),
+        "cooldown_samples": int(cooldown_samples),
     }
 
 
@@ -128,6 +211,12 @@ def main() -> None:
     X_test, y_test = X[test_mask], y[test_mask]
     print(f"test samples: {X_test.shape[0]}")
 
+    # The production-rule baseline operates on RAW (un-scaled) values;
+    # invert the saved StandardScaler rather than re-loading the source
+    # CSVs so this script remains a self-contained re-runnable artifact.
+    scaler = joblib.load(SCALER_PATH)
+    X_test_raw = scaler.inverse_transform(X_test)
+
     iforest = joblib.load(MODEL_IF_PATH)
     lof = joblib.load(MODEL_LOF_PATH) if MODEL_LOF_PATH.exists() else None
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -141,22 +230,26 @@ def main() -> None:
     w_if = float((ens.get("weights") or {}).get("isolation_forest", 0.5))
     w_lof = float((ens.get("weights") or {}).get("lof", 0.5))
 
-    # 1) Rule baseline = labels themselves.
-    rule_pred = y_test.copy()
-    rule_metrics = _metrics(y_test, rule_pred)
+    # 1) Self-consistency: labels vs themselves. Kept as a defended
+    #    sanity ceiling, NOT as a real baseline. F1=1.0 by construction.
+    self_metrics = _metrics(y_test, y_test.copy())
 
-    # 2) IsolationForest alone.
+    # 2) Production rule engine on raw test values -- the actual
+    #    user-visible alert behaviour.
+    prod_pred = _production_rule_predictions(X_test_raw)
+    prod_metrics = _metrics(y_test, prod_pred)
+
+    # 3) IsolationForest alone.
     if_pred = iforest.predict(X_test)
     if_metrics = _metrics(y_test, np.where(if_pred == -1, -1, 1))
 
-    # 3) LOF alone.
+    # 4) LOF alone.
     if lof is not None:
         lof_pred = lof.predict(X_test)
         lof_metrics = _metrics(y_test, np.where(lof_pred == -1, -1, 1))
     else:
         lof_metrics = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
 
-    # Time inference latency for the ensemble path.
     if_dec = iforest.decision_function(X_test)
     lof_dec = lof.decision_function(X_test) if lof is not None else np.zeros_like(if_dec)
     if_norm = _normalize(if_dec, if_lo, if_hi)
@@ -165,7 +258,7 @@ def main() -> None:
     ens_pred = np.where(ens_test >= threshold, -1, 1)
     ens_metrics = _metrics(y_test, ens_pred)
 
-    # 4) Ablation: zero residual block at inference.
+    # 5) Ablation: zero residual block at inference.
     ablation_idx = [
         FEATURE_INDEX["gas_no_occupancy"],
         FEATURE_INDEX["motion_at_night"],
@@ -183,10 +276,13 @@ def main() -> None:
     ens_a_pred = np.where(ens_a >= threshold, -1, 1)
     ablation_metrics = _metrics(y_test, ens_a_pred)
 
-    # 5) Operational metrics on the ensemble predictions.
-    operational = _operational_metrics(ens_pred, y_test)
+    # 6) Operational metrics: report for both the production-rule
+    #    baseline and the IF+LOF ensemble so the thesis can compare
+    #    "what the user sees today" vs "what ML would deliver".
+    op_prod = _operational_metrics(prod_pred, y_test)
+    op_ens = _operational_metrics(ens_pred, y_test)
 
-    # 6) Per-row inference latency via the IF model (LOF dominates if used).
+    # 7) Per-row inference latency via the IF model (LOF dominates if used).
     n_lat = min(2000, X_test.shape[0])
     sample = X_test[:n_lat]
     timings: list[float] = []
@@ -204,20 +300,50 @@ def main() -> None:
         "p99_ms": float(np.quantile(arr, 0.99)),
         "mean_ms": float(arr.mean()),
         "samples": int(arr.size),
+        "note": (
+            "Per-row decision_function only. End-to-end ingestion latency "
+            "includes scaler.transform + Redis write + DB session refresh "
+            "and is reported by scripts/failure_test.py."
+        ),
     }
 
     report: dict[str, Any] = {
         "test_samples": int(X_test.shape[0]),
         "models": {
-            "rule_baseline": rule_metrics,
+            "label_self_consistency": {
+                **self_metrics,
+                "_note": (
+                    "Tautological: proxy labels compared against themselves. "
+                    "Reported only as a sanity ceiling; F1=1.0 by definition."
+                ),
+            },
+            "production_rule_engine": {
+                **prod_metrics,
+                "_note": (
+                    "Real alert-engine thresholds (see "
+                    "services.alert_engine._effective_thresholds) applied to "
+                    "raw test values. This is what the user experiences."
+                ),
+                "thresholds": {
+                    "temperature_max": PROD_RULE_TEMPERATURE_MAX,
+                    "gas_max": PROD_RULE_GAS_MAX,
+                    "smoke_max": PROD_RULE_SMOKE_MAX,
+                    "humidity_min": PROD_RULE_HUMIDITY_MIN,
+                    "humidity_max": PROD_RULE_HUMIDITY_MAX,
+                },
+            },
             "isolation_forest_alone": if_metrics,
             "lof_alone": lof_metrics,
             "ensemble_if_lof": ens_metrics,
             "ensemble_minus_residuals": ablation_metrics,
         },
-        "operational": operational,
+        "operational": {
+            "production_rule_engine": op_prod,
+            "ensemble_if_lof": op_ens,
+        },
         "latency": latency,
         "ensemble_threshold": threshold,
+        "ensemble_weights": {"isolation_forest": w_if, "lof": w_lof},
     }
     REPORT_PATH.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
