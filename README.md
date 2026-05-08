@@ -59,3 +59,43 @@ python -m scripts.failure_test   # broker outage + recovery measurement (require
 ```
 
 Schema/feature contract is pinned in `backend/ml/feature_schema.py` (`SCHEMA_VERSION="contextual_v1"`). The inference service refuses to score when the manifest version mismatches the code version, so retraining is mandatory whenever the schema changes.
+
+## Frontend (dark analytics console)
+
+The frontend is a unified dark analytics workspace styled in the spirit of Grafana / Datadog. It has five top-level routes under the authenticated shell:
+
+| Route        | What it shows                                                                                                  |
+|--------------|----------------------------------------------------------------------------------------------------------------|
+| `/dashboard` | Hero KPI row, **Live Anomaly Score** panel, telemetry grid, humanized alert feed, **Operational Metrics** panel |
+| `/telemetry` | Multi-metric chart with **threshold bands** + adaptive line, sparkline strip, behavioral heatmap & correlations |
+| `/anomaly`   | Per-device drill-down with **anomaly score history** chart, learned-normal envelope and contextual explanations |
+| `/alerts`    | Active + resolved incidents with humanized `alert_reasons` and `recommended_action`                            |
+| `/devices`   | Sensor catalog with online/offline status                                                                      |
+
+Key shared components live under `frontend/components/analytics/`:
+
+- `live-anomaly-score-card.tsx` — current adaptive score, threshold, trend, confidence.
+- `explanation-card.tsx` — humanizes `explanation_tokens` into readable narratives.
+- `learned-normal-card.tsx` — P10/P50/P90 envelope vs current reading per hour-of-day.
+- `correlation-insights.tsx` — sentence list + matrix toggle for cross-sensor relationships.
+- `behavioral-heatmap.tsx` — anomaly score by room × hour with anomaly density overlay.
+- `threshold-band-chart.tsx` — Recharts wrapper rendering normal / warning / anomaly zones.
+- `operational-metrics-panel.tsx` + `system-health-strip.tsx` — websocket latency (avg / p95 / max), throughput, message loss, reconnect count, degraded inference mode.
+
+Token humanizer lives in `frontend/lib/explanations.ts`. It maps backend feature labels and risk-engine reasons to operator-facing copy and composes one-line narratives such as *"Kitchen: Gas elevated without occupancy."*.
+
+### Frontend roadmap (Part 6 proposals)
+
+Implemented in this pass:
+
+- **Anomaly Workspace** — per-device drill-down using `/anomaly/history`.
+- **Humanized explanation card** — token-to-sentence mapper.
+- **Cross-sensor relationship insights** — natural-language replacement for the raw correlation matrix.
+- **System health strip + operational metrics panel** — degraded-mode and reconnect-count visibility.
+
+Proposed and grounded in existing backend data (no schema changes required):
+
+- *Occupancy timeline overlay* — overlay motion + light onto anomaly chart to visualize occupancy-aware reasoning. Backend already exposes both fields per reading.
+- *Predictive behavior indicator* — render a faint forward band on the dashboard chart from the next-hour `/anomaly/profile` envelope.
+- *Room intelligence view* — group anomalies by `room` and rank rooms by anomaly density per day.
+- *Historical comparison tool* — diff the current 24h envelope vs the previous 24h by re-querying `/anomaly/profile` twice.

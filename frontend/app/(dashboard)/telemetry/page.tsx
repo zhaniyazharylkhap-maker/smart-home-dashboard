@@ -2,22 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Scatter,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { AlertTriangle, ChevronDown, Filter, ShieldAlert, Thermometer, Wifi } from "lucide-react";
+  AlertTriangle,
+  ChevronDown,
+  Filter,
+  ShieldAlert,
+  Thermometer,
+  Wifi,
+} from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { AnalyticsPanel } from "@/components/analytics-panel";
 import { ContextualAnalyticsPanel } from "@/components/contextual-analytics-panel";
+import {
+  METRIC_BANDS,
+  ThresholdBandChart,
+  type ThresholdBandRow,
+  type ThresholdBandSeries,
+} from "@/components/analytics/threshold-band-chart";
+import { Button } from "@/components/ui/button";
+import { Card, CardSectionLabel } from "@/components/ui/card";
+import { Sparkline } from "@/components/ui/sparkline";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
 import {
   fetchAlerts,
@@ -40,7 +43,7 @@ type MetricKey =
   | "light";
 
 const METRICS: { id: MetricKey; label: string; unit: string }[] = [
-  { id: "temperature", label: "Temperature", unit: "degC" },
+  { id: "temperature", label: "Temperature", unit: "°C" },
   { id: "humidity", label: "Humidity", unit: "%" },
   { id: "gas", label: "Gas", unit: "ppm" },
   { id: "smoke", label: "Smoke", unit: "ppm" },
@@ -50,18 +53,18 @@ const METRICS: { id: MetricKey; label: string; unit: string }[] = [
 const CARD_METRICS: MetricKey[] = ["temperature", "humidity", "gas", "smoke", "motion"];
 
 const RANGES = [
-  { id: "1h", label: "Last hour" },
-  { id: "24h", label: "Last 24h" },
-  { id: "7d", label: "Last 7 days" },
+  { id: "1h", label: "1h" },
+  { id: "24h", label: "24h" },
+  { id: "7d", label: "7d" },
 ] as const;
 
 const METRIC_COLORS: Record<MetricKey, string> = {
-  temperature: "#16a34a",
+  temperature: "#22d3ee",
   humidity: "#3b82f6",
-  gas: "#d97706",
-  smoke: "#dc2626",
-  motion: "#8b5cf6",
-  light: "#f59e0b",
+  gas: "#f59e0b",
+  smoke: "#ef4444",
+  motion: "#a855f7",
+  light: "#facc15",
 };
 
 function metricLabel(metric: MetricKey): string {
@@ -70,10 +73,6 @@ function metricLabel(metric: MetricKey): string {
 
 function metricUnit(metric: MetricKey): string {
   return METRICS.find((m) => m.id === metric)?.unit ?? "";
-}
-
-function metricStroke(metric: MetricKey): string {
-  return METRIC_COLORS[metric];
 }
 
 function fmt(value: number | null | undefined, digits = 1): string {
@@ -90,41 +89,38 @@ function SparkMetricCard({
   latest: number | null;
   points: { t: string; v: number | null }[];
 }) {
-  const stroke = metricStroke(metric);
+  const stroke = METRIC_COLORS[metric];
   const label = metricLabel(metric);
+  const values = points.map((p) => p.v);
   return (
     <Card className="min-w-[180px] p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-light text-text-dim">{label}</p>
-        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: stroke }} />
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
+          {label}
+        </p>
+        <span
+          className="h-2 w-2 rounded-full"
+          style={{ backgroundColor: stroke }}
+        />
       </div>
-      <p className="kpi-value mb-2 text-2xl text-text-primary" style={{ color: stroke }}>
+      <p
+        className="kpi-value tabular text-2xl"
+        style={{ color: stroke }}
+      >
         {metric === "motion"
           ? latest == null
             ? "—"
             : latest >= 0.5
-              ? "Detected"
-              : "Clear"
-          : `${fmt(latest)} ${metricUnit(metric)}`}
+              ? "On"
+              : "Off"
+          : fmt(latest)}
+        {metric !== "motion" ? (
+          <span className="ml-1 text-[10px] font-light text-text-dim">
+            {metricUnit(metric)}
+          </span>
+        ) : null}
       </p>
-      <div className="h-12">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={points.map((p) => ({
-              t: new Date(p.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-              v: p.v,
-            }))}
-          >
-            <Line
-              type="monotone"
-              dataKey="v"
-              stroke={stroke}
-              strokeWidth={1.8}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      <Sparkline values={values} stroke={stroke} height={36} className="mt-1" />
     </Card>
   );
 }
@@ -154,9 +150,6 @@ export default function TelemetryPage() {
     readings,
     timeline,
     anomalyThreshold,
-    latencyStats,
-    throughputStats,
-    performanceSummary,
     anomalyByDevice,
     recentAnomalyEvents,
   } = useLiveTelemetry();
@@ -241,18 +234,24 @@ export default function TelemetryPage() {
     () => (viewMode === "single" ? [singleMetric] : selectedMetrics),
     [viewMode, singleMetric, selectedMetrics]
   );
-  const chartData = useMemo(() => {
+
+  const chartData: ThresholdBandRow[] = useMemo(() => {
     const anomalyBuckets = new Set(
       timeline
         .filter((p) => p.anomaly)
         .map((p) => new Date(p.timestamp).toISOString().slice(0, 16))
     );
-    const byTime = new Map<string, { t: string } & Partial<Record<MetricKey, number | null>>>();
+    const byTime = new Map<string, ThresholdBandRow>();
     for (const m of chartMetrics) {
       const points = histories[m]?.points ?? [];
       for (const p of points) {
         const key = p.t;
-        const row = byTime.get(key) ?? { t: key };
+        const row =
+          byTime.get(key) ??
+          ({
+            t: key,
+            tLabel: new Date(key).toLocaleString(),
+          } as ThresholdBandRow);
         row[m] = p.v;
         byTime.set(key, row);
       }
@@ -261,14 +260,27 @@ export default function TelemetryPage() {
       .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
       .map((r) => {
         const anomalyKey = new Date(r.t).toISOString().slice(0, 16);
-        const temp = r.temperature ?? null;
+        const temp = (r.temperature as number | null | undefined) ?? null;
         return {
           ...r,
-          tLabel: new Date(r.t).toLocaleString(),
-          anomaly: anomalyBuckets.has(anomalyKey) ? temp : null,
+          anomaly: anomalyBuckets.has(anomalyKey) ? temp ?? null : null,
         };
       });
   }, [histories, chartMetrics, timeline]);
+
+  const chartSeries: ThresholdBandSeries[] = useMemo(
+    () =>
+      chartMetrics.map((m) => ({
+        key: m,
+        label: metricLabel(m),
+        stroke: METRIC_COLORS[m],
+        unit: metricUnit(m),
+      })),
+    [chartMetrics]
+  );
+
+  const primaryMetric: MetricKey =
+    viewMode === "single" ? singleMetric : chartMetrics[0] ?? "temperature";
 
   const latestByMetric = useMemo(() => {
     const out = {} as Record<MetricKey, number | null>;
@@ -282,43 +294,41 @@ export default function TelemetryPage() {
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
       <div className="mb-4">
-        <h1 className="text-[28px] font-bold">Telemetry</h1>
-        <p className="text-sm font-light text-text-secondary">
-          Historical and real-time sensor analytics
+        <h1 className="text-[28px] font-bold leading-tight">Telemetry</h1>
+        <p className="mt-1 text-sm font-light text-text-secondary">
+          Historical and real-time sensor analytics with adaptive thresholds
         </p>
       </div>
 
-      {/* Dense KPI cards reduce eye travel during real-time monitoring, which is why
-          BI/Grafana-style dashboards cluster high-value status indicators first. */}
       <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
-          <Thermometer className="h-4 w-4 text-accent" />
-          <span className="text-[11px] uppercase tracking-wide text-slate-400">Current temp</span>
-          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
-            {fmt(latestByMetric.temperature)} degC
-          </span>
-        </div>
-        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
-          <ShieldAlert className="h-4 w-4 text-accent" />
-          <span className="text-[11px] uppercase tracking-wide text-slate-400">Risk level</span>
-          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
-            {topReading?.risk_level ?? "SAFE"}
-          </span>
-        </div>
-        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
-          <AlertTriangle className="h-4 w-4 text-amber" />
-          <span className="text-[11px] uppercase tracking-wide text-slate-400">Alerts</span>
-          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
-            {activeAlerts}
-          </span>
-        </div>
-        <div className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4">
-          <Wifi className="h-4 w-4 text-accent" />
-          <span className="text-[11px] uppercase tracking-wide text-slate-400">Devices active</span>
-          <span className="ml-auto font-display text-sm font-semibold text-slate-100">
-            {devicesOnline}
-          </span>
-        </div>
+        <KpiPill
+          icon={<Thermometer className="h-4 w-4 text-accent" />}
+          label="Current temp"
+          value={`${fmt(latestByMetric.temperature)} °C`}
+        />
+        <KpiPill
+          icon={<ShieldAlert className="h-4 w-4 text-amber" />}
+          label="Risk level"
+          value={topReading?.risk_level ?? "SAFE"}
+          tone={
+            topReading?.risk_level === "CRITICAL"
+              ? "danger"
+              : topReading?.risk_level === "WARNING"
+                ? "warning"
+                : "default"
+          }
+        />
+        <KpiPill
+          icon={<AlertTriangle className="h-4 w-4 text-amber" />}
+          label="Active alerts"
+          value={String(activeAlerts)}
+          tone={activeAlerts > 0 ? "warning" : "default"}
+        />
+        <KpiPill
+          icon={<Wifi className="h-4 w-4 text-safe" />}
+          label="Devices active"
+          value={devicesOnline}
+        />
       </div>
 
       <div className="mb-4 md:hidden">
@@ -333,7 +343,10 @@ export default function TelemetryPage() {
             Filters
           </span>
           <ChevronDown
-            className={cn("h-4 w-4 transition-transform", mobileFiltersOpen && "rotate-180")}
+            className={cn(
+              "h-4 w-4 transition-transform",
+              mobileFiltersOpen && "rotate-180"
+            )}
           />
         </Button>
       </div>
@@ -345,10 +358,10 @@ export default function TelemetryPage() {
         )}
       >
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-          <label className="text-xs text-text-secondary">
+          <label className="text-[11px] uppercase tracking-wider text-text-dim">
             Room
             <select
-              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+              className="mt-1 min-h-10 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
               value={room}
               onChange={(e) => setRoom(e.target.value)}
             >
@@ -360,10 +373,10 @@ export default function TelemetryPage() {
               ))}
             </select>
           </label>
-          <label className="text-xs text-text-secondary">
+          <label className="text-[11px] uppercase tracking-wider text-text-dim">
             Device
             <select
-              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+              className="mt-1 min-h-10 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
             >
@@ -375,10 +388,10 @@ export default function TelemetryPage() {
               ))}
             </select>
           </label>
-          <label className="text-xs text-text-secondary">
+          <label className="text-[11px] uppercase tracking-wider text-text-dim">
             Chart mode
             <select
-              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+              className="mt-1 min-h-10 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
               value={viewMode}
               onChange={(e) => setViewMode(e.target.value as "multi" | "single")}
             >
@@ -387,12 +400,14 @@ export default function TelemetryPage() {
             </select>
           </label>
           {viewMode === "single" ? (
-            <label className="text-xs text-text-secondary">
+            <label className="text-[11px] uppercase tracking-wider text-text-dim">
               Metric
               <select
-                className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+                className="mt-1 min-h-10 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
                 value={singleMetric}
-                onChange={(e) => setSingleMetric(e.target.value as MetricKey)}
+                onChange={(e) =>
+                  setSingleMetric(e.target.value as MetricKey)
+                }
               >
                 {METRICS.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -403,7 +418,9 @@ export default function TelemetryPage() {
             </label>
           ) : null}
           <div className="lg:col-span-2">
-            <p className="mb-1 text-xs text-text-secondary">Metrics</p>
+            <p className="mb-1 text-[11px] uppercase tracking-wider text-text-dim">
+              Metrics
+            </p>
             <div className="flex flex-wrap gap-1.5">
               {METRICS.map((m) => {
                 const active = selectedMetrics.includes(m.id);
@@ -423,10 +440,10 @@ export default function TelemetryPage() {
                     }
                     disabled={viewMode === "single"}
                     className={cn(
-                      "min-h-11 rounded-btn border px-2.5 text-xs font-body transition",
+                      "min-h-9 rounded-btn border px-3 text-xs font-body transition",
                       active
-                        ? "border-accent text-accent"
-                        : "border-border text-text-secondary hover:bg-surface-2",
+                        ? "border-accent/50 bg-accent-light text-accent"
+                        : "border-border bg-surface-2 text-text-secondary hover:bg-surface-3",
                       viewMode === "single" && "opacity-50"
                     )}
                   >
@@ -436,120 +453,80 @@ export default function TelemetryPage() {
               })}
             </div>
           </div>
-          <label className="text-xs text-text-secondary">
+          <div className="text-[11px] uppercase tracking-wider text-text-dim">
             Window
-            <div className="mt-1 flex gap-1.5">
+            <div className="mt-1 inline-flex overflow-hidden rounded-btn border border-border">
               {RANGES.map((r) => (
                 <button
                   key={r.id}
                   type="button"
                   onClick={() => setRange(r.id)}
                   className={cn(
-                    "min-h-11 rounded-lg border px-2 text-xs font-body",
+                    "min-h-10 px-3 text-xs font-medium transition",
                     range === r.id
-                      ? "border-accent bg-accent text-white"
-                      : "border-border text-text-secondary hover:bg-surface-2"
+                      ? "bg-accent text-text-on-accent"
+                      : "bg-surface-2 text-text-secondary hover:bg-surface-3"
                   )}
                 >
                   {r.label}
                 </button>
               ))}
             </div>
-          </label>
+          </div>
           <div className="flex items-end">
-            <Button type="button" onClick={() => void load()} disabled={loading} className="w-full">
-              {loading ? "Loading..." : "Reload"}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void load()}
+              disabled={loading}
+              className="w-full"
+            >
+              {loading ? "Loading…" : "Reload"}
             </Button>
           </div>
         </div>
       </div>
 
       {err ? (
-        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-amber">
+        <div className="mb-4 rounded-md border border-amber/30 bg-amber-light px-4 py-3 text-sm text-amber">
           {err}
         </div>
       ) : null}
 
-      <Card className="mb-4 border-border/60 bg-slate-900/70 p-3 md:p-4">
-        {loading ? (
-          <div className="flex h-[200px] animate-pulse items-center justify-center text-sm text-text-secondary md:h-[280px]">
-            Loading telemetry analytics...
+      <Card className="mb-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardSectionLabel>Time-series with threshold bands</CardSectionLabel>
+            <p className="mt-1 text-xs font-light text-text-secondary">
+              Normal · warning · anomaly zones derived from sensor profiles
+              {anomalyThreshold != null ? (
+                <>
+                  {" · "}
+                  <span className="mono">
+                    adaptive threshold {anomalyThreshold.toFixed(1)}
+                  </span>
+                </>
+              ) : null}
+            </p>
           </div>
-        ) : chartData.length === 0 ? (
-          <div className="flex h-[200px] items-center justify-center text-sm text-text-secondary md:h-[280px]">
-            No points in this window yet — generate telemetry from the simulator.
-          </div>
-        ) : (
-          <div className="h-[200px] md:h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="2 6" stroke="#334155" />
-                <XAxis
-                  dataKey="tLabel"
-                  stroke="#94a3b8"
-                  tick={{
-                    fill: "#94a3b8",
-                    fontFamily: "Inter",
-                    fontSize: 11,
-                  }}
-                  minTickGap={28}
-                />
-                <YAxis
-                  stroke="#94a3b8"
-                  tick={{
-                    fill: "#94a3b8",
-                    fontFamily: "Inter",
-                    fontSize: 11,
-                  }}
-                />
-                <Tooltip
-                  labelFormatter={(label) => String(label)}
-                  formatter={(value: unknown, name: unknown) => {
-                    if (String(name) === "anomaly") return ["Anomaly detected", "Status"];
-                    const key = String(name) as MetricKey;
-                    const numeric = typeof value === "number" ? value : null;
-                    if (value == null) return ["—", metricLabel(key)];
-                    if (key === "motion")
-                      return [numeric != null && numeric >= 0.5 ? "Detected" : "Clear", metricLabel(key)];
-                    return [
-                      numeric == null ? "—" : `${numeric.toFixed(2)} ${metricUnit(key)}`,
-                      metricLabel(key),
-                    ];
-                  }}
-                  contentStyle={{
-                    background: "#0f172a",
-                    border: "1px solid #334155",
-                    borderRadius: "8px",
-                    boxShadow: "0 2px 10px rgba(0,0,0,0.28)",
-                    color: "#e2e8f0",
-                    fontFamily: "Inter",
-                    fontSize: 12,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 11 }} verticalAlign="bottom" />
-                {chartMetrics.map((m) => (
-                  <Line
-                    key={m}
-                    type="monotone"
-                    dataKey={m}
-                    name={m}
-                    stroke={metricStroke(m)}
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive
-                    animationDuration={500}
-                  />
-                ))}
-                <Scatter dataKey="anomaly" name="anomaly" fill="#ef4444" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        </div>
+        <ThresholdBandChart
+          data={chartData}
+          series={chartSeries}
+          bands={
+            viewMode === "single"
+              ? METRIC_BANDS[primaryMetric] ?? METRIC_BANDS.temperature
+              : METRIC_BANDS.temperature
+          }
+          loading={loading}
+          emptyMessage="No points in this window yet — generate telemetry from the simulator."
+          height={300}
+        />
       </Card>
 
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm text-text-secondary">Sparkline Strip</h2>
-        <span className="text-xs font-light text-text-dim">5 metrics</span>
+        <CardSectionLabel>Sparkline strip</CardSectionLabel>
+        <span className="text-[11px] font-light text-text-dim">5 metrics</span>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-3 lg:grid-cols-5">
         {CARD_METRICS.map((m) => (
@@ -562,8 +539,6 @@ export default function TelemetryPage() {
         ))}
       </div>
 
-      {/* Consolidating analytical modules in one dense telemetry workspace improves
-          operator context switching time and makes anomaly triage faster. */}
       <div className="mt-4">
         <AnalyticsPanel
           timeline={timeline}
@@ -573,51 +548,66 @@ export default function TelemetryPage() {
         />
       </div>
 
-      {/* Intelligent IoT analytics: live anomaly score, contextual explanations,
-          behavioral heatmap, cross-sensor correlation, learned-normal envelopes. */}
       <div className="mt-4">
         <ContextualAnalyticsPanel
           timeline={timeline}
           anomalyByDevice={anomalyByDevice}
           recentAnomalyEvents={recentAnomalyEvents}
+          defaultMetric={
+            primaryMetric === "motion" ? "temperature" : (primaryMetric as
+              | "temperature"
+              | "humidity"
+              | "gas"
+              | "smoke"
+              | "light")
+          }
+          currentByMetric={{
+            temperature: latestByMetric.temperature,
+            humidity: latestByMetric.humidity,
+            gas: latestByMetric.gas,
+            smoke: latestByMetric.smoke,
+            light: latestByMetric.light,
+          }}
         />
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <Card className="border-border/60 bg-slate-900/70">
-          <CardContent className="p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Latency</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-100">
-              {latencyStats.avg == null ? "—" : `${Math.round(latencyStats.avg)} ms`}
-            </p>
-            <p className="text-xs text-slate-500">
-              {latencyStats.max == null ? "No live samples yet" : `Max ${Math.round(latencyStats.max)} ms`}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60 bg-slate-900/70">
-          <CardContent className="p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Throughput</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-100">
-              {throughputStats.current == null ? "—" : `${throughputStats.current.toFixed(2)} msg/s`}
-            </p>
-            <p className="text-xs text-slate-500">
-              {throughputStats.max == null ? "Waiting for stream" : `Peak ${throughputStats.max.toFixed(2)} msg/s`}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60 bg-slate-900/70">
-          <CardContent className="p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Message loss</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-100">
-              {(performanceSummary.loss_rate * 100).toFixed(2)}%
-            </p>
-            <p className="text-xs text-slate-500">
-              {performanceSummary.dropped_messages}/{performanceSummary.total_messages} dropped
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+function KpiPill({
+  icon,
+  label,
+  value,
+  tone = "default",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone?: "default" | "warning" | "danger";
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex min-h-12 items-center gap-2 rounded-card border px-3",
+        tone === "danger" && "border-danger/30 bg-danger-light",
+        tone === "warning" && "border-amber/30 bg-amber-light",
+        (!tone || tone === "default") && "border-border bg-surface"
+      )}
+    >
+      {icon}
+      <span className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
+        {label}
+      </span>
+      <span
+        className={cn(
+          "ml-auto font-display text-sm font-semibold tabular",
+          tone === "danger" && "text-danger",
+          tone === "warning" && "text-amber",
+          (!tone || tone === "default") && "text-text-primary"
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }

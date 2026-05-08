@@ -1,38 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardSectionLabel } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { fetchAlerts, resolveAlert } from "@/lib/api";
+import { humanizeAlertReasons, humanizeRoom } from "@/lib/explanations";
+import { cn } from "@/lib/utils";
 import type { AlertRow } from "@/types/domain";
 
-function SeverityBadge({ s }: { s: string }) {
+function severityVariant(s: string): "danger" | "warning" | "neutral" {
   const key = s.toLowerCase();
-  const variant =
-    key === "critical"
-      ? "danger"
-      : key === "warning"
-        ? "warning"
-        : "neutral";
-  return <Badge variant={variant}>{s}</Badge>;
+  if (key === "critical") return "danger";
+  if (key === "warning") return "warning";
+  return "neutral";
 }
 
-function riskText(level: string | null, score: number | null): string {
-  if (score == null) return "—";
-  const base = `${Math.round(score)}`;
-  if (!level) return base;
-  if (level === "CRITICAL") return `${base} (critical)`;
-  if (level === "WARNING") return `${base} (warning)`;
-  if (level === "SAFE") return `${base} (safe)`;
-  return base;
-}
-
-function riskTone(level: string | null): string {
-  if (level === "CRITICAL") return "text-danger";
-  if (level === "WARNING") return "text-amber";
-  return "text-accent";
+function riskTone(level: string | null): "default" | "warning" | "danger" {
+  if (level === "CRITICAL") return "danger";
+  if (level === "WARNING") return "warning";
+  return "default";
 }
 
 function accentFromAlert(a: AlertRow): "safe" | "warning" | "critical" {
@@ -46,14 +36,18 @@ export default function AlertsPage() {
   const [rows, setRows] = useState<AlertRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
     try {
       setErr(null);
+      setLoading(true);
       const data = await fetchAlerts();
       setRows(data);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -75,192 +69,202 @@ export default function AlertsPage() {
     }
   };
 
-  const active = rows.filter((r) => r.status === "unresolved");
-  const history = rows.filter((r) => r.status === "resolved");
+  const active = useMemo(
+    () => rows.filter((r) => r.status === "unresolved"),
+    [rows]
+  );
+  const history = useMemo(
+    () => rows.filter((r) => r.status === "resolved"),
+    [rows]
+  );
 
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
-      <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[28px] font-bold">Alerts</h1>
-          <p className="text-sm font-light text-text-secondary">
-            Active and historical incident stream
+          <h1 className="text-[28px] font-bold leading-tight">Alerts</h1>
+          <p className="mt-1 text-sm font-light text-text-secondary">
+            Active and historical incident stream with humanized reasoning
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={() => void load()}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void load()}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
       </div>
 
       {err ? (
-        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-amber">
+        <div className="mb-4 rounded-md border border-amber/30 bg-amber-light px-4 py-3 text-sm text-amber">
           {err}
         </div>
       ) : null}
 
       <section className="mb-6">
         <Card>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-sm font-semibold text-text-primary">
-                Active incidents
-              </h2>
-              <Badge variant={active.length > 0 ? "danger" : "neutral"}>
-                {active.length}
-              </Badge>
-            </div>
-            <AlertTable
-              rows={active}
-              onResolve={onResolve}
-              busy={busy}
-              showResolve
+          <div className="mb-3 flex items-center justify-between">
+            <CardSectionLabel>Active incidents</CardSectionLabel>
+            <Badge variant={active.length > 0 ? "danger" : "neutral"}>
+              {active.length}
+            </Badge>
+          </div>
+          {loading ? (
+            <p className="text-xs text-text-dim">Loading…</p>
+          ) : active.length === 0 ? (
+            <EmptyState
+              icon={CheckCircle2}
+              title="All clear"
+              description="No unresolved incidents at the moment."
             />
-          </CardContent>
+          ) : (
+            <div className="grid gap-2.5">
+              {active.map((a) => (
+                <AlertItem
+                  key={a.id}
+                  alert={a}
+                  showResolve
+                  onResolve={onResolve}
+                  busy={busy === a.id}
+                />
+              ))}
+            </div>
+          )}
         </Card>
       </section>
 
       <section>
         <Card>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-sm font-semibold text-text-primary">
-                Resolved history
-              </h2>
-              <Badge variant="neutral">{history.length}</Badge>
+          <div className="mb-3 flex items-center justify-between">
+            <CardSectionLabel>Resolved history</CardSectionLabel>
+            <Badge variant="neutral">{history.length}</Badge>
+          </div>
+          {loading ? (
+            <p className="text-xs text-text-dim">Loading…</p>
+          ) : history.length === 0 ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="No resolved alerts yet"
+              description="Resolved incidents will accumulate here for audit and review."
+            />
+          ) : (
+            <div className="grid gap-2.5">
+              {history.map((a) => (
+                <AlertItem key={a.id} alert={a} />
+              ))}
             </div>
-            <AlertTable rows={history} onResolve={onResolve} busy={busy} />
-          </CardContent>
+          )}
         </Card>
       </section>
     </div>
   );
 }
 
-function AlertTable({
-  rows,
+function AlertItem({
+  alert,
+  showResolve,
   onResolve,
   busy,
-  showResolve,
 }: {
-  rows: AlertRow[];
-  onResolve: (id: number) => void;
-  busy: number | null;
+  alert: AlertRow;
   showResolve?: boolean;
+  onResolve?: (id: number) => void;
+  busy?: boolean;
 }) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-card border border-dashed border-border bg-surface px-4 py-10 text-center text-sm text-text-secondary">
-        No rows.
-      </div>
-    );
-  }
+  const level = alert.risk_level ?? alert.severity.toUpperCase();
+  const reasons = humanizeAlertReasons(alert.alert_reasons ?? []);
+  const tone = riskTone(level);
   return (
-    <>
-      <div className="hidden overflow-hidden rounded-card border border-border bg-surface md:block">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-border bg-surface-2 text-[12px] font-medium uppercase tracking-wide text-text-dim">
-          <tr>
-            <th className="px-4 py-3">Severity</th>
-            <th className="px-4 py-3">Risk</th>
-            <th className="px-4 py-3">Title</th>
-            <th className="px-4 py-3">Room</th>
-            <th className="px-4 py-3">Device</th>
-            <th className="px-4 py-3">When</th>
-            {showResolve ? <th className="px-4 py-3" /> : null}
-          </tr>
-          </thead>
-          <tbody>
-            {rows.map((a) => (
-              <tr
-                key={a.id}
-                className="border-b border-border last:border-0 hover:bg-surface-2"
+    <Card
+      accentLeft={accentFromAlert(alert)}
+      tone={tone === "danger" ? "anomaly" : tone === "warning" ? "warning" : "default"}
+      className="p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <Badge variant={severityVariant(alert.severity)}>
+              {alert.severity}
+            </Badge>
+            {alert.risk_score != null ? (
+              <span
+                className={cn(
+                  "font-display text-sm font-semibold tabular",
+                  tone === "danger" && "text-danger",
+                  tone === "warning" && "text-amber",
+                  tone === "default" && "text-text-secondary"
+                )}
               >
-                <td className="px-4 py-3">
-                  <SeverityBadge s={a.severity} />
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`font-display text-sm font-semibold ${riskTone(
-                      a.risk_level ?? a.severity.toUpperCase()
-                    )}`}
-                  >
-                    {riskText(a.risk_level, a.risk_score)}
+                Risk {Math.round(alert.risk_score)}
+                {level ? (
+                  <span className="ml-1 text-[10px] font-light uppercase text-text-dim">
+                    {level}
                   </span>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-display text-[13px] font-medium">{a.title}</p>
-                  <p className="text-xs font-light text-text-secondary">
-                    {a.description}
-                  </p>
-                </td>
-                <td className="px-4 py-3 text-xs font-normal text-text-secondary">{a.room_name ?? "—"}</td>
-                <td className="px-4 py-3 text-xs font-normal text-text-secondary">
-                  {a.device_external_id ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-xs font-light text-text-dim">
-                  {new Date(a.created_at).toLocaleString()}
-                </td>
-                {showResolve ? (
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="px-3 py-1.5 text-xs"
-                      disabled={busy === a.id}
-                      onClick={() => onResolve(a.id)}
-                    >
-                      {busy === a.id ? "..." : "Resolve"}
-                    </Button>
-                  </td>
                 ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="space-y-2 md:hidden">
-        {rows.map((a) => (
-          <Card key={a.id} accentLeft={accentFromAlert(a)}>
-            <CardContent className="p-3">
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <SeverityBadge s={a.severity} />
-                </div>
-                <span
-                  className={`font-display text-sm font-semibold ${riskTone(
-                    a.risk_level ?? a.severity.toUpperCase()
-                  )}`}
-                >
-                  {riskText(a.risk_level, a.risk_score)}
-                </span>
-              </div>
-              <p className="font-display text-[13px] font-medium">{a.title}</p>
-              <p className="mt-0.5 text-xs font-light text-text-secondary">{a.description}</p>
-              <p className="mt-1 text-xs font-light text-text-dim">
-                Room: <span className="text-text-secondary">{a.room_name ?? "—"}</span> · Device:{" "}
-                <span className="text-text-secondary">{a.device_external_id ?? "—"}</span>
-              </p>
-              <p className="mt-1 text-xs font-light text-text-dim">
-                {new Date(a.created_at).toLocaleString()}
-              </p>
-              {showResolve ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 w-full px-3 py-2 text-xs"
-                  disabled={busy === a.id}
-                  onClick={() => onResolve(a.id)}
-                >
-                  {busy === a.id ? "..." : "Resolve"}
-                </Button>
+              </span>
+            ) : null}
+            <span className="text-[10px] font-light text-text-dim">
+              {humanizeRoom(alert.room_name)}
+              {alert.device_external_id ? (
+                <>
+                  {" · "}
+                  <span className="mono text-text-secondary">
+                    {alert.device_external_id}
+                  </span>
+                </>
               ) : null}
-            </CardContent>
-          </Card>
-        ))}
+            </span>
+          </div>
+          <p className="font-display text-sm font-medium text-text-primary">
+            {alert.title}
+          </p>
+          {alert.description ? (
+            <p className="mt-0.5 text-[13px] font-light text-text-secondary">
+              {alert.description}
+            </p>
+          ) : null}
+          {alert.recommended_action ? (
+            <div className="mt-2 inline-flex items-start gap-1.5 rounded-md border border-accent/30 bg-accent-light px-2.5 py-1.5 text-[12px] text-accent">
+              <CheckCircle2 className="mt-[1px] h-3.5 w-3.5 shrink-0" />
+              <span>{alert.recommended_action}</span>
+            </div>
+          ) : null}
+          {reasons.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {reasons.map((r) => (
+                <span
+                  key={r}
+                  className="inline-flex items-center rounded-pill border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-text-secondary"
+                >
+                  {r}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex flex-col items-end gap-1.5 text-[11px] text-text-dim">
+          <span>{new Date(alert.created_at).toLocaleString()}</span>
+          {alert.resolved_at ? (
+            <span className="text-safe">
+              Resolved {new Date(alert.resolved_at).toLocaleString()}
+            </span>
+          ) : null}
+          {showResolve && onResolve ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => onResolve(alert.id)}
+            >
+              {busy ? "..." : "Resolve"}
+            </Button>
+          ) : null}
+        </div>
       </div>
-    </>
+    </Card>
   );
 }

@@ -49,38 +49,53 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <div className="w-full max-w-[400px] rounded-card border border-border bg-surface p-6 shadow-card">
-        <h1 className="text-center font-display text-[28px] font-bold text-accent">
-          NEXUS
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4 py-10">
+      <div className="w-full max-w-[420px] rounded-card border border-border bg-surface p-6 shadow-panel md:p-8">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border-strong bg-surface-2">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-accent shadow-[0_0_10px_rgba(34,211,238,0.7)]" />
+          </span>
+          <div>
+            <p className="font-display text-lg font-semibold tracking-[0.2em] text-text-primary">
+              NEXUS
+            </p>
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-text-dim">
+              Smart Home Analytics
+            </p>
+          </div>
+        </div>
+
+        <h1 className="font-display text-xl font-semibold text-text-primary">
+          Create account
         </h1>
-        <p className="mt-1 text-center text-sm font-light text-text-secondary">
-          Create your account
+        <p className="mt-1 text-sm font-light text-text-secondary">
+          Spin up your operator workspace and start monitoring your fleet.
         </p>
-        <form className="mt-8 space-y-4" onSubmit={onSubmit}>
-          <label className="block text-xs font-normal text-text-secondary">
+
+        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+          <label className="block text-[11px] uppercase tracking-wider text-text-dim">
             Full name
             <input
-              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
             />
           </label>
-          <label className="block text-xs font-normal text-text-secondary">
+          <label className="block text-[11px] uppercase tracking-wider text-text-dim">
             Email
             <input
-              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
               required
             />
           </label>
-          <label className="block text-xs font-normal text-text-secondary">
+          <label className="block text-[11px] uppercase tracking-wider text-text-dim">
             Password
             <input
-              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
+              className="mt-1 min-h-11 w-full rounded-btn border border-border bg-surface-2 px-3 py-2 font-body text-sm font-normal text-text-primary outline-none transition-colors focus:border-accent"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
@@ -89,23 +104,34 @@ export default function RegisterPage() {
             />
             <p
               className={`mt-1 text-[11px] font-light ${
-                password.length >= 8 ? "text-accent" : "text-text-dim"
+                password.length >= 8 ? "text-safe" : "text-text-dim"
               }`}
             >
               Minimum 8 characters
             </p>
           </label>
           {error ? (
-            <p className="text-sm text-danger">{error}</p>
+            <p className="rounded-md border border-danger/30 bg-danger-light px-3 py-2 text-sm text-danger">
+              {error}
+            </p>
           ) : null}
-          <Button type="submit" variant="primary" className="w-full" disabled={loading}>
-            {loading ? "Creating..." : "Create account"}
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            className="w-full"
+            disabled={loading}
+          >
+            {loading ? "Creating…" : "Create account"}
           </Button>
         </form>
 
-        <p className="mt-4 text-center text-sm font-light text-text-secondary">
+        <p className="mt-5 text-center text-sm font-light text-text-secondary">
           Already have an account?{" "}
-          <Link href="/login" className="text-accent hover:text-accent-dim">
+          <Link
+            href="/login"
+            className="font-medium text-accent hover:text-accent-hover"
+          >
             Sign in
           </Link>
         </p>

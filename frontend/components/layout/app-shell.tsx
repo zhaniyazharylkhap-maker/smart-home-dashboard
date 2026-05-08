@@ -35,18 +35,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-bg text-text-primary">
       <AppSidebar />
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="flex min-h-14 items-center justify-between border-b border-border bg-bg px-4 py-3 md:px-5 lg:px-6">
+        <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between border-b border-border bg-bg/85 px-4 py-3 backdrop-blur md:px-5 lg:px-6">
           <Link
             href="/"
-            className="font-display text-sm font-semibold tracking-wide text-accent transition-colors hover:text-accent-hover"
+            className="flex items-center gap-2 font-display text-sm font-semibold tracking-wide text-text-primary transition-colors hover:text-accent"
           >
-            NEXUS
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border-strong bg-surface">
+              <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+            </span>
+            <span className="font-display tracking-[0.18em]">NEXUS</span>
+            <span className="hidden text-[10px] font-light uppercase tracking-[0.16em] text-text-dim md:inline">
+              Smart Home Analytics
+            </span>
           </Link>
           <div className="text-right">
-            <p className="text-[11px] font-body font-light uppercase tracking-wide text-text-dim">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
               Operator
             </p>
-            <p className="max-w-[160px] truncate font-body text-xs font-light text-text-secondary md:max-w-[220px]">
+            <p className="max-w-[160px] truncate font-body text-xs font-light text-text-secondary md:max-w-[260px]">
               {user?.email}
             </p>
           </div>

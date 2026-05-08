@@ -4,56 +4,84 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
-  Gauge,
+  Cpu,
+  Download,
   RefreshCw,
   Shield,
-  Wifi,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { LiveAnomalyScoreCard } from "@/components/analytics/live-anomaly-score-card";
+import { OperationalMetricsPanel } from "@/components/analytics/operational-metrics-panel";
+import { SystemHealthStrip } from "@/components/analytics/system-health-strip";
 import { TelemetryReadingCard } from "@/components/telemetry-reading-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { StatusDot } from "@/components/ui/status-dot";
-import { fetchDashboardStats } from "@/lib/api";
+import { Card, CardSectionLabel } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
-import type { DashboardStats } from "@/types/domain";
+import { fetchDashboardStats } from "@/lib/api";
+import {
+  humanizeAlertReasons,
+  humanizeRoom,
+} from "@/lib/explanations";
 import { cn } from "@/lib/utils";
+import type { DashboardStats } from "@/types/domain";
 
-function Kpi({
+function alertTone(level?: string | null): {
+  accentLeft: "safe" | "warning" | "critical";
+  badge: "safe" | "warning" | "danger";
+} {
+  if (level === "CRITICAL") return { accentLeft: "critical", badge: "danger" };
+  if (level === "WARNING") return { accentLeft: "warning", badge: "warning" };
+  return { accentLeft: "safe", badge: "safe" };
+}
+
+function HeroKpi({
   label,
   value,
   subtext,
   icon: Icon,
-  tone = "safe",
+  tone = "default",
 }: {
   label: string;
-  value: string | number;
+  value: React.ReactNode;
   subtext: string;
   icon: React.ComponentType<{ className?: string }>;
-  tone?: "safe" | "warning" | "critical";
+  tone?: "default" | "safe" | "warning" | "danger";
 }) {
   return (
-    <Card accentLeft={tone} className="p-3 md:p-4">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <p className="text-[12px] font-light uppercase tracking-wide text-text-dim">
+    <Card className="flex flex-col gap-3 p-4 md:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-text-dim">
           {label}
         </p>
-        <Icon className="h-5 w-5 text-accent" />
+        <Icon
+          className={cn(
+            "h-4 w-4",
+            tone === "danger" && "text-danger",
+            tone === "warning" && "text-amber",
+            tone === "safe" && "text-safe",
+            tone === "default" && "text-accent"
+          )}
+        />
       </div>
-      <div className="mb-1">
-        <p className="kpi-value text-[32px] leading-none">{value}</p>
-      </div>
-      <p className="text-xs font-normal text-text-secondary">{subtext}</p>
+      <p
+        className={cn(
+          "kpi-value tabular leading-none",
+          tone === "danger" && "text-danger",
+          tone === "warning" && "text-amber",
+          tone === "safe" && "text-text-primary",
+          tone === "default" && "text-text-primary",
+          "text-kpi-sm md:text-kpi"
+        )}
+      >
+        {value}
+      </p>
+      <p className="text-[11px] font-light text-text-dim">{subtext}</p>
     </Card>
   );
-}
-
-function alertTone(level?: string | null) {
-  if (level === "CRITICAL") return "border-l-danger";
-  if (level === "WARNING") return "border-l-amber";
-  return "border-l-accent";
 }
 
 export default function DashboardPage() {
@@ -66,15 +94,23 @@ export default function DashboardPage() {
     throughputStats,
     performanceSummary,
     recentAlerts,
+    timeline,
+    anomalyByDevice,
+    streamHealth,
   } = useLiveTelemetry();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
 
+  const lastEventAt = useMemo(() => {
+    if (timeline.length === 0) return null;
+    return timeline[timeline.length - 1].timestamp;
+  }, [timeline]);
+
   const downloadMetricsCsv = () => {
-    // CSV export supports reproducible thesis experiments and offline analysis.
     const rows = [
       ["metric", "value"],
       ["latency_avg_ms", String(performanceSummary.avg_latency_ms ?? "")],
+      ["latency_p95_ms", String(performanceSummary.p95_latency_ms ?? "")],
       ["latency_max_ms", String(performanceSummary.max_latency_ms ?? "")],
       ["throughput_msg_per_sec", String(performanceSummary.throughput_msg_per_sec ?? "")],
       ["throughput_max_msg_per_sec", String(performanceSummary.max_throughput_msg_per_sec ?? "")],
@@ -82,6 +118,8 @@ export default function DashboardPage() {
       ["messages_total", String(performanceSummary.total_messages)],
       ["messages_dropped", String(performanceSummary.dropped_messages)],
       ["message_loss_rate", String(performanceSummary.loss_rate)],
+      ["reconnect_count", String(streamHealth.reconnect_count)],
+      ["degraded_mode", String(streamHealth.degraded)],
     ];
     const csv = rows.map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -116,40 +154,39 @@ export default function DashboardPage() {
         ? "Warning"
         : "Safe";
 
-  const statusTone: "safe" | "warning" | "critical" =
+  const statusTone: "safe" | "warning" | "danger" =
     stats?.home_status === "critical"
-      ? "critical"
+      ? "danger"
       : stats?.home_status === "warning"
         ? "warning"
         : "safe";
 
+  const liveAnomalyCount = Object.values(anomalyByDevice).filter(
+    (a) => a.is_contextual_anomaly
+  ).length;
+
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
         <div>
-          <h1 className="text-[28px] font-bold">Overview</h1>
-          <p className="text-sm font-light text-text-secondary">
-            Live sensor data and system status
+          <h1 className="text-[28px] font-bold leading-tight">Overview</h1>
+          <p className="mt-1 text-sm font-light text-text-secondary">
+            Live behavior, anomalies, and operational health across your fleet
           </p>
+          <SystemHealthStrip
+            connected={connected}
+            degraded={streamHealth.degraded}
+            lastEventAt={lastEventAt}
+            reconnectCount={streamHealth.reconnect_count}
+            latencyAvgMs={latencyStats.avg}
+            className="mt-3"
+          />
         </div>
         <div className="flex items-center gap-2">
-          <div
-            className={cn(
-              "inline-flex min-h-11 items-center gap-2 rounded-pill px-3 py-1.5 text-xs font-medium",
-              connected
-                ? "bg-accent-light text-accent"
-                : "bg-amber-light text-amber"
-            )}
-          >
-            <StatusDot
-              status={connected ? "online" : "warning"}
-              pulse={connected}
-            />
-            {connected ? "Live" : "Reconnecting..."}
-          </div>
           <Button
             type="button"
-            variant="outline"
+            variant="subtle"
+            size="sm"
             onClick={() => {
               void reload();
               void loadStats();
@@ -158,139 +195,90 @@ export default function DashboardPage() {
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadMetricsCsv}
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </Button>
         </div>
       </header>
 
       {statsError ? (
-        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-3 py-2 text-sm text-amber">
+        <div className="mb-4 rounded-md border border-amber/30 bg-amber-light px-3 py-2 text-sm text-amber">
           {statsError}
         </div>
       ) : null}
 
-      <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-        <Kpi
+      <section className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <HeroKpi
           label="Home Status"
-          value={stats ? statusLabel : "--"}
-          subtext="Derived from incident severity"
+          value={stats ? statusLabel : <Skeleton className="h-8 w-20" />}
+          subtext="Derived from rule + anomaly engine"
           icon={Shield}
           tone={statusTone}
         />
-        <Kpi
+        <HeroKpi
+          label="Live Anomalies"
+          value={liveAnomalyCount}
+          subtext="Devices currently above adaptive threshold"
+          icon={AlertTriangle}
+          tone={liveAnomalyCount > 0 ? "danger" : "safe"}
+        />
+        <HeroKpi
           label="Devices Online"
-          value={stats ? `${stats.devices_online}/${stats.devices_total}` : "--"}
+          value={
+            stats ? (
+              `${stats.devices_online}/${stats.devices_total}`
+            ) : (
+              <Skeleton className="h-8 w-16" />
+            )
+          }
           subtext="Seen in the last 2 minutes"
-          icon={Wifi}
+          icon={Cpu}
           tone="safe"
         />
-        <Kpi
+        <HeroKpi
           label="Active Alerts"
-          value={stats?.active_alerts ?? "--"}
+          value={stats ? stats.active_alerts : <Skeleton className="h-8 w-12" />}
           subtext="Unresolved incidents"
           icon={AlertTriangle}
           tone={stats && stats.active_alerts > 0 ? "warning" : "safe"}
         />
-        <Kpi
-          label="Latency Avg"
-          value={
-            latencyStats.avg == null ? "--" : `${Math.round(latencyStats.avg)}ms`
-          }
-          subtext={
-            latencyStats.latest == null
-              ? "Waiting for traced stream"
-              : `latest ${Math.round(latencyStats.latest)}ms`
-          }
-          icon={Gauge}
-          tone={latencyStats.avg != null && latencyStats.avg > 1200 ? "warning" : "safe"}
-        />
       </section>
 
-      <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-        <Kpi
-          label="Throughput"
-          value={
-            throughputStats.current == null
-              ? "--"
-              : `${throughputStats.current.toFixed(2)} msg/s`
-          }
-          subtext={
-            throughputStats.max == null
-              ? "Waiting for stream"
-              : `max ${throughputStats.max.toFixed(2)} msg/s`
-          }
-          icon={Activity}
-          tone="safe"
-        />
-        <Kpi
-          label="Latency Max"
-          value={
-            performanceSummary.max_latency_ms == null
-              ? "--"
-              : `${Math.round(performanceSummary.max_latency_ms)}ms`
-          }
-          subtext="Used for thesis performance evaluation"
-          icon={Gauge}
-          tone={
-            performanceSummary.max_latency_ms != null &&
-            performanceSummary.max_latency_ms > 2000
-              ? "warning"
-              : "safe"
-          }
-        />
-        <Kpi
-          label="Perf Samples"
-          value={performanceSummary.samples}
-          subtext={
-            performanceSummary.avg_latency_ms == null
-              ? "No telemetry timing yet"
-              : `avg ${Math.round(performanceSummary.avg_latency_ms)}ms`
-          }
-          icon={Shield}
-          tone="safe"
-        />
-        <Kpi
-          label="Message Loss"
-          value={`${(performanceSummary.loss_rate * 100).toFixed(2)}%`}
-          subtext={
-            performanceSummary.total_messages === 0
-              ? "No traffic observed yet"
-              : `${performanceSummary.dropped_messages}/${performanceSummary.total_messages}`
-          }
-          icon={AlertTriangle}
-          tone={performanceSummary.dropped_messages > 0 ? "warning" : "safe"}
+      <section className="mb-5">
+        <LiveAnomalyScoreCard
+          timeline={timeline}
+          anomalyByDevice={anomalyByDevice}
         />
       </section>
-
-      <div className="mb-4 flex justify-end">
-        <Button type="button" variant="outline" onClick={downloadMetricsCsv}>
-          Download metrics (CSV)
-        </Button>
-      </div>
 
       {error ? (
-        <div className="mb-4 rounded-sm border border-amber/40 bg-amber/10 px-3 py-2 text-sm text-amber">
+        <div className="mb-4 rounded-md border border-amber/30 bg-amber-light px-3 py-2 text-sm text-amber">
           {error}
         </div>
       ) : null}
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="mb-5 grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm text-text-secondary">Live Telemetry Grid</h2>
-            <span className="text-xs font-light text-text-dim">
-              {readings.length} devices
+            <CardSectionLabel>Live Telemetry Grid</CardSectionLabel>
+            <span className="text-[11px] font-light text-text-dim">
+              {readings.length} device{readings.length === 1 ? "" : "s"}
             </span>
           </div>
           {readings.length === 0 && !error ? (
-            <Card className="p-6 text-center">
-              <CardContent className="p-0">
-                <Activity className="mx-auto mb-2 h-5 w-5 text-text-dim" />
-                <p className="text-sm text-text-secondary">
-                  Waiting for telemetry stream...
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={Activity}
+              title="Waiting for telemetry stream"
+              description="Once the simulator publishes events you'll see live readings appear here."
+            />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               {readings.map((r, i) => (
                 <TelemetryReadingCard key={r.device_id} reading={r} index={i} />
               ))}
@@ -300,67 +288,93 @@ export default function DashboardPage() {
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm text-text-secondary">Live Alert Feed</h2>
-            <span className="text-xs font-light text-text-dim">
+            <CardSectionLabel>Live Alert Feed</CardSectionLabel>
+            <Badge variant={recentAlerts.length > 0 ? "warning" : "neutral"}>
               {recentAlerts.length}
-            </span>
+            </Badge>
           </div>
-          <Card className="h-full">
-            <CardContent className="p-2 md:p-3">
-              {recentAlerts.length === 0 ? (
-                <p className="py-12 text-center text-sm font-light text-text-dim">
-                  No recent alerts
-                </p>
-              ) : (
-                <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1 lg:max-h-[420px]">
-                  <AnimatePresence initial={false}>
-                    {recentAlerts.map((a) => (
+          <Card className="h-full p-3 md:p-4">
+            {recentAlerts.length === 0 ? (
+              <EmptyState
+                icon={AlertTriangle}
+                title="No recent alerts"
+                description="Live alerts will stream in here as the engine detects unsafe conditions."
+                className="py-8"
+              />
+            ) : (
+              <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
+                <AnimatePresence initial={false}>
+                  {recentAlerts.map((a) => {
+                    const level = a.risk_level ?? a.severity?.toUpperCase();
+                    const tone = alertTone(level);
+                    const reasons = humanizeAlertReasons(a.alert_reasons ?? []);
+                    return (
                       <motion.div
                         key={a.id}
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
-                        className={cn(
-                          "rounded-xl border border-border border-l-[3px] bg-surface px-3 py-3",
-                          alertTone(a.risk_level ?? a.severity?.toUpperCase())
-                        )}
                       >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <p className="font-display text-[13px] font-medium text-text-primary">
-                            {a.title}
+                        <Card
+                          accentLeft={tone.accentLeft}
+                          tone={
+                            level === "CRITICAL"
+                              ? "anomaly"
+                              : level === "WARNING"
+                                ? "warning"
+                                : "default"
+                          }
+                          className="p-3"
+                        >
+                          <div className="mb-1 flex items-start justify-between gap-2">
+                            <p className="font-display text-[13px] font-medium leading-tight text-text-primary">
+                              {a.title}
+                            </p>
+                            <Badge variant={tone.badge}>{level ?? "safe"}</Badge>
+                          </div>
+                          <p className="text-[11px] font-light text-text-dim">
+                            {humanizeRoom(a.room_name)} ·{" "}
+                            {new Date(a.created_at).toLocaleTimeString()}
                           </p>
-                          <Badge
-                            variant={
-                              (a.risk_level ?? a.severity?.toUpperCase()) === "CRITICAL"
-                                ? "danger"
-                                : (a.risk_level ?? a.severity?.toUpperCase()) === "WARNING"
-                                  ? "warning"
-                                  : "success"
-                            }
-                          >
-                            {a.risk_level ?? "safe"}
-                          </Badge>
-                        </div>
-                        <p className="text-[11px] font-light text-text-dim">
-                          {(a.room_name ?? "Unknown room").replaceAll("_", " ")} ·{" "}
-                          {new Date(a.created_at).toLocaleTimeString()}
-                        </p>
-                        {a.description ? (
-                          <p className="mt-1 text-xs text-text-secondary">
-                            {a.description}
-                          </p>
-                        ) : null}
+                          {a.description ? (
+                            <p className="mt-1 text-[12px] text-text-secondary">
+                              {a.description}
+                            </p>
+                          ) : null}
+                          {reasons.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {reasons.slice(0, 3).map((r) => (
+                                <span
+                                  key={r}
+                                  className="inline-flex items-center rounded-pill border border-border bg-surface-2 px-2 py-0.5 text-[10px] text-text-secondary"
+                                >
+                                  {r}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </Card>
                       </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              )}
-            </CardContent>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
           </Card>
         </div>
       </section>
 
+      <section>
+        <OperationalMetricsPanel
+          performanceSummary={performanceSummary}
+          latencyStats={latencyStats}
+          throughputStats={throughputStats}
+          streamHealth={streamHealth}
+          connected={connected}
+          timeline={timeline}
+        />
+      </section>
     </div>
   );
 }

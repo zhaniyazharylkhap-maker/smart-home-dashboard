@@ -23,24 +23,40 @@ def _norm_temperature(temp: float | None) -> float:
 
 # Sensor-unit calibration constants. Telemetry arrives on the MOX/CO
 # scale shared by training CSVs and the simulator (gas ~50-300, smoke
-# ~50-700). The denominators below are the rule-engine "max" values from
-# `alert_engine._effective_thresholds`; staying in lockstep keeps the
-# risk score and the rule engine reasoning about the same operating
-# point. If you re-tune one, re-tune the other.
+# ~50-700). The "full risk" denominators are the rule-engine "max"
+# values from `alert_engine._effective_thresholds`; staying in lockstep
+# keeps the risk score and the rule engine reasoning about the same
+# operating point. If you re-tune one, re-tune the other.
+#
+# The "baseline floor" values matter because real MOX/CO sensors do not
+# rest at zero -- a calm room reads ~80-120 ppm. Without subtracting
+# this floor, a perfectly normal idle reading (gas=90, smoke=110)
+# already mapped to ~45/100 on the risk axis, which on its own pushed
+# the weighted score into WARNING and made every chart tick render as
+# "anomaly". Now we treat anything at or below the baseline as zero
+# risk and only count the headroom toward the alarm threshold.
+_GAS_BASELINE_FLOOR = 120.0
 _GAS_FULL_RISK = 200.0
+_SMOKE_BASELINE_FLOOR = 130.0
 _SMOKE_FULL_RISK = 250.0
 
 
 def _norm_smoke(smoke: float | None) -> float:
     if smoke is None:
         return 0.0
-    return _clamp((smoke / _SMOKE_FULL_RISK) * 100.0)
+    if smoke <= _SMOKE_BASELINE_FLOOR:
+        return 0.0
+    span = _SMOKE_FULL_RISK - _SMOKE_BASELINE_FLOOR
+    return _clamp(((smoke - _SMOKE_BASELINE_FLOOR) / span) * 100.0)
 
 
 def _norm_gas(gas: float | None) -> float:
     if gas is None:
         return 0.0
-    return _clamp((gas / _GAS_FULL_RISK) * 100.0)
+    if gas <= _GAS_BASELINE_FLOOR:
+        return 0.0
+    span = _GAS_FULL_RISK - _GAS_BASELINE_FLOOR
+    return _clamp(((gas - _GAS_BASELINE_FLOOR) / span) * 100.0)
 
 
 def _motion_factor(motion: bool | None) -> float:

@@ -54,9 +54,26 @@ type ThroughputStats = {
   max: number | null;
 };
 
+type LatencyStats = {
+  latest: number | null;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+  p95: number | null;
+  count: number;
+};
+
+type StreamHealth = {
+  reconnect_count: number;
+  last_connected_at: string | null;
+  last_disconnected_at: string | null;
+  degraded: boolean;
+};
+
 type PerformanceSnapshot = {
   avg_latency_ms: number | null;
   max_latency_ms: number | null;
+  p95_latency_ms: number | null;
   throughput_msg_per_sec: number | null;
   max_throughput_msg_per_sec: number | null;
   samples: number;
@@ -121,13 +138,20 @@ export function useLiveTelemetry() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<LiveAlert[]>([]);
-  const [latencyStats, setLatencyStats] = useState<{
-    latest: number | null;
-    avg: number | null;
-    min: number | null;
-    max: number | null;
-    count: number;
-  }>({ latest: null, avg: null, min: null, max: null, count: 0 });
+  const [streamHealth, setStreamHealth] = useState<StreamHealth>({
+    reconnect_count: 0,
+    last_connected_at: null,
+    last_disconnected_at: null,
+    degraded: false,
+  });
+  const [latencyStats, setLatencyStats] = useState<LatencyStats>({
+    latest: null,
+    avg: null,
+    min: null,
+    max: null,
+    p95: null,
+    count: 0,
+  });
   const [throughputStats, setThroughputStats] = useState<ThroughputStats>({
     current: null,
     avg: null,
@@ -143,6 +167,7 @@ export function useLiveTelemetry() {
   const [performanceSummary, setPerformanceSummary] = useState<PerformanceSnapshot>({
     avg_latency_ms: null,
     max_latency_ms: null,
+    p95_latency_ms: null,
     throughput_msg_per_sec: null,
     max_throughput_msg_per_sec: null,
     samples: 0,
@@ -159,6 +184,7 @@ export function useLiveTelemetry() {
   const performanceRef = useRef<PerformanceSnapshot>({
     avg_latency_ms: null,
     max_latency_ms: null,
+    p95_latency_ms: null,
     throughput_msg_per_sec: null,
     max_throughput_msg_per_sec: null,
     samples: 0,
@@ -200,6 +226,14 @@ export function useLiveTelemetry() {
       ws.onopen = () => {
         if (!cancelled) {
           setConnected(true);
+          setStreamHealth((prev) => ({
+            ...prev,
+            last_connected_at: new Date().toISOString(),
+            reconnect_count:
+              prev.last_disconnected_at != null
+                ? prev.reconnect_count + 1
+                : prev.reconnect_count,
+          }));
           try {
             ws.send("ping");
           } catch {
@@ -210,6 +244,10 @@ export function useLiveTelemetry() {
       ws.onclose = () => {
         if (!cancelled) {
           setConnected(false);
+          setStreamHealth((prev) => ({
+            ...prev,
+            last_disconnected_at: new Date().toISOString(),
+          }));
           retryTimer = setTimeout(connect, 2000);
         }
       };
@@ -251,6 +289,7 @@ export function useLiveTelemetry() {
                 avg: next.length ? sum / next.length : null,
                 min: next.length ? Math.min(...next) : null,
                 max: next.length ? Math.max(...next) : null,
+                p95: percentile(next, 95),
                 count: next.length,
               });
             }
@@ -274,11 +313,14 @@ export function useLiveTelemetry() {
               max: throughputMax,
             });
 
-            const ruleAnomaly =
-              (reading.risk_level ?? "SAFE").toUpperCase() !== "SAFE" ||
-              (reading.risk_score ?? 0) >= 70;
             const contextualAnomaly = Boolean(reading.is_contextual_anomaly);
-            const anomaly = ruleAnomaly || contextualAnomaly;
+            // `anomaly` on the timeline is reserved for the contextual ML
+            // flag specifically -- "the model thinks this point deviates
+            // from learned normal". Rule-engine WARNING/CRITICAL stay
+            // exposed via `risk_level`/`risk_score`, so chart anomaly
+            // markers no longer light up on every elevated-but-normal
+            // baseline reading.
+            const anomaly = contextualAnomaly;
             const ctxScore =
               typeof reading.anomaly_score === "number"
                 ? reading.anomaly_score
@@ -360,6 +402,7 @@ export function useLiveTelemetry() {
                   latenciesRef.current.reduce((a, b) => a + b, 0) /
                   latenciesRef.current.length,
                 max_latency_ms: Math.max(...latenciesRef.current),
+                p95_latency_ms: percentile(latenciesRef.current, 95),
                 throughput_msg_per_sec: currentThroughput,
                 max_throughput_msg_per_sec: throughputMax,
                 samples: latenciesRef.current.length,
@@ -369,6 +412,11 @@ export function useLiveTelemetry() {
               };
               performanceRef.current = nextPerformance;
               setPerformanceSummary(nextPerformance);
+            }
+            if (reading.model_version === "degraded") {
+              setStreamHealth((prev) =>
+                prev.degraded ? prev : { ...prev, degraded: true }
+              );
             }
             setByDevice((prev) => mergeReading(prev, reading));
             return;
@@ -383,6 +431,11 @@ export function useLiveTelemetry() {
             setRecentAnomalyEvents((prev) =>
               [ev, ...prev].slice(0, 24)
             );
+            if (ev.degraded) {
+              setStreamHealth((prev) =>
+                prev.degraded ? prev : { ...prev, degraded: true }
+              );
+            }
           }
           const totalMessages = nextTotalMessages;
           const droppedMessages = performanceRef.current.dropped_messages;
@@ -461,5 +514,6 @@ export function useLiveTelemetry() {
     timeline,
     anomalyByDevice,
     recentAnomalyEvents,
+    streamHealth,
   };
 }

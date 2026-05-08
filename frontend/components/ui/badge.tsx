@@ -4,9 +4,11 @@ import { cn } from "@/lib/utils";
 
 type BadgeVariant =
   | "success"
+  | "safe"
   | "warning"
   | "danger"
   | "neutral"
+  | "info"
   | "online"
   | "offline";
 
@@ -19,16 +21,29 @@ export function Badge({
   variant = "neutral",
   ...props
 }: BadgeProps) {
-  const normalized = variant === "online" ? "success" : variant === "offline" ? "neutral" : variant;
+  const normalized =
+    variant === "online"
+      ? "safe"
+      : variant === "offline"
+        ? "neutral"
+        : variant === "success"
+          ? "safe"
+          : variant;
 
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-pill px-2.5 py-[3px] font-body text-xs font-medium",
-        normalized === "success" && "bg-accent-light text-accent",
-        normalized === "warning" && "bg-amber-light text-amber",
-        normalized === "danger" && "bg-danger-light text-danger",
-        normalized === "neutral" && "bg-surface-2 text-text-secondary",
+        "inline-flex items-center gap-1 rounded-pill border px-2.5 py-[3px] font-display text-[11px] font-medium uppercase tracking-wide",
+        normalized === "safe" &&
+          "border-safe/30 bg-safe-light text-safe",
+        normalized === "warning" &&
+          "border-amber/30 bg-amber-light text-amber",
+        normalized === "danger" &&
+          "border-danger/30 bg-danger-light text-danger",
+        normalized === "info" &&
+          "border-accent/30 bg-accent-light text-accent",
+        normalized === "neutral" &&
+          "border-border bg-surface-2 text-text-secondary",
         className
       )}
       {...props}

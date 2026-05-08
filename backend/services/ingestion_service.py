@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from hashlib import sha256
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +20,26 @@ from services.alert_engine import evaluate_telemetry
 from services.contextual_service import evaluate_contextual_event
 
 logger = logging.getLogger(__name__)
+
+
+# Per-device cooldown for the dedicated `contextual_anomaly` stream
+# event. The contextual score still flows on every tick inside the
+# regular telemetry payload (so charts and the live grid update in
+# real time); we just throttle the "fresh anomaly card" burst so the
+# alert feed doesn't repeat the same explanation every two seconds
+# while a device sits persistently above its adaptive threshold.
+_ANOMALY_EMIT_COOLDOWN = timedelta(seconds=45)
+_anomaly_emit_lock = threading.Lock()
+_last_anomaly_emit_at: dict[str, datetime] = {}
+
+
+def _should_emit_contextual_event(device_id: str, now: datetime) -> bool:
+    with _anomaly_emit_lock:
+        last = _last_anomaly_emit_at.get(device_id)
+        if last is not None and now - last < _ANOMALY_EMIT_COOLDOWN:
+            return False
+        _last_anomaly_emit_at[device_id] = now
+        return True
 
 
 def _compute_trace_id(device_id: str, timestamp: datetime) -> str:
@@ -177,9 +198,13 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
             "degraded": ctx.degraded,
         }
         contextual_storage.record_event(ctx_event)
-        if ctx.is_anomaly:
+        if ctx.is_anomaly and _should_emit_contextual_event(
+            device.device_id, datetime.now(timezone.utc)
+        ):
             # Emit a dedicated WS event type so the frontend can wire
-            # it into the anomaly feed without ambiguity.
+            # it into the anomaly feed without ambiguity. Cooldown above
+            # avoids spamming the operator with the same explanation
+            # every tick while a device persistently breaches threshold.
             append_stream_event(
                 {"type": "contextual_anomaly", "payload": ctx_event}
             )

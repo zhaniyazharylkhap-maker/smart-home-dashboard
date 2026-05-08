@@ -40,13 +40,15 @@ export function MetricValue({
       animate={{ color: "var(--color-text-primary)" }}
       transition={{ duration: 0.35, ease: "easeOut" }}
       className={cn(
-        "inline-flex items-baseline gap-1 font-mono tabular",
+        "inline-flex items-baseline gap-1 tabular kpi-value",
         sizeClasses[size],
         className
       )}
     >
       <span>{normalizedValue}</span>
-      {unit ? <span className="text-xs text-text-secondary">{unit}</span> : null}
+      {unit ? (
+        <span className="text-xs font-light text-text-dim">{unit}</span>
+      ) : null}
     </motion.div>
   );
 }
