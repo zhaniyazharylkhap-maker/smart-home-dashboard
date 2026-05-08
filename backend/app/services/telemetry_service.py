@@ -6,17 +6,27 @@ from app.schemas.telemetry import TelemetryIngest, TelemetryReading
 from services.risk_engine import compute_risk
 
 
-def ensure_room(db: Session, room_name: str) -> Room:
+def ensure_room(db: Session, room_name: str, *, user_id: int | None = None) -> Room:
     name = room_name.strip().lower()
     room = db.execute(select(Room).where(Room.name == name)).scalar_one_or_none()
     if room is None:
-        room = Room(name=name, type="generic")
+        room = Room(name=name, type="generic", user_id=user_id)
         db.add(room)
         db.flush()
+    elif room.user_id is None and user_id is not None:
+        # Backfill ownership for rows created before migration 007.
+        room.user_id = user_id
     return room
 
 
-def ensure_device(db: Session, device_id: str, room: Room, name: str | None) -> Device:
+def ensure_device(
+    db: Session,
+    device_id: str,
+    room: Room,
+    name: str | None,
+    *,
+    user_id: int | None = None,
+) -> Device:
     did = device_id.strip()
     dev = db.execute(select(Device).where(Device.device_id == did)).scalar_one_or_none()
     if dev is None:
@@ -26,11 +36,16 @@ def ensure_device(db: Session, device_id: str, room: Room, name: str | None) -> 
             room_id=room.id,
             device_type="multi_sensor",
             status="online",
+            user_id=user_id,
         )
         db.add(dev)
         db.flush()
-    elif dev.room_id != room.id:
-        dev.room_id = room.id
+    else:
+        if dev.room_id != room.id:
+            dev.room_id = room.id
+        if dev.user_id is None and user_id is not None:
+            # Backfill ownership for rows created before migration 007.
+            dev.user_id = user_id
     return dev
 
 
@@ -40,12 +55,19 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
     return complete_ingest(db, payload)
 
 
-def get_latest_per_device(db: Session) -> list[TelemetryReading]:
+def get_latest_per_device(db: Session, *, user_id: int) -> list[TelemetryReading]:
+    """Latest telemetry per device, restricted to devices owned by user_id."""
+    # Restrict the inner aggregation to the caller's devices so a tenant
+    # cannot observe latency or value for a device they do not own.
+    user_devices = (
+        select(Device.id).where(Device.user_id == user_id).subquery()
+    )
     latest = (
         select(
             Telemetry.device_id.label("dev_id"),
             func.max(Telemetry.timestamp).label("mx"),
         )
+        .where(Telemetry.device_id.in_(select(user_devices.c.id)))
         .group_by(Telemetry.device_id)
         .subquery()
     )

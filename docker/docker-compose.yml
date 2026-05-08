@@ -51,7 +51,8 @@ services:
       MQTT_TELEMETRY_TOPIC: smarthome/telemetry
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
+      # Backend rejects this placeholder at boot; set JWT_SECRET in docker/.env.
+      JWT_SECRET: ${JWT_SECRET:-__REPLACE_ME__}
     ports:
       - "8000:8000"
     depends_on:

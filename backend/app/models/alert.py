@@ -12,6 +12,13 @@ class Alert(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     room_id: Mapped[int | None] = mapped_column(ForeignKey("rooms.id"), index=True, nullable=True)
     device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), index=True, nullable=True)
+    # Nullable for backward-compat with rows pre-dating migration 007;
+    # application layer enforces ownership on all new writes (denormalized
+    # from device.user_id at alert-creation time so list queries do not
+    # need a join).
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), index=True, nullable=True
+    )
     alert_type: Mapped[str] = mapped_column(String(64), index=True)
     severity: Mapped[str] = mapped_column(String(16), index=True)
     title: Mapped[str] = mapped_column(String(255))

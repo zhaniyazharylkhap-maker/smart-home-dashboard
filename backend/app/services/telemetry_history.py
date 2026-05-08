@@ -25,6 +25,7 @@ METRIC_ATTR = {
 def get_history(
     db: Session,
     *,
+    user_id: int,
     metric: str,
     range_key: str,
     room_name: str | None,
@@ -36,10 +37,17 @@ def get_history(
         raise ValueError("invalid range")
     cutoff = datetime.now(timezone.utc) - RANGE_MAP[range_key]
 
-    q = select(Telemetry).where(Telemetry.timestamp >= cutoff)
+    # Tenant scope: telemetry rows are reachable only via owned devices.
+    user_device_ids = select(Device.id).where(Device.user_id == user_id).scalar_subquery()
+    q = select(Telemetry).where(
+        Telemetry.timestamp >= cutoff,
+        Telemetry.device_id.in_(user_device_ids),
+    )
     if room_name:
         rn = room_name.strip().lower()
-        room = db.execute(select(Room).where(Room.name == rn)).scalar_one_or_none()
+        room = db.execute(
+            select(Room).where(Room.name == rn, Room.user_id == user_id)
+        ).scalar_one_or_none()
         if room is None:
             return TelemetryHistoryResponse(
                 room=room_name,
@@ -51,7 +59,10 @@ def get_history(
         q = q.where(Telemetry.room_id == room.id)
     if device_external_id:
         dev = db.execute(
-            select(Device).where(Device.device_id == device_external_id.strip())
+            select(Device).where(
+                Device.device_id == device_external_id.strip(),
+                Device.user_id == user_id,
+            )
         ).scalar_one_or_none()
         if dev is None:
             return TelemetryHistoryResponse(

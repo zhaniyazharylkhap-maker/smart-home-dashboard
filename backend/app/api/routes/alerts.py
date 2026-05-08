@@ -50,13 +50,22 @@ def _to_out(db: Session, a: Alert) -> AlertOut:
     )
 
 
+# Multi-tenancy: alerts are user-scoped via the denormalized user_id column
+# (set at alert-creation time from device.user_id). Rows with NULL user_id
+# are legacy rows that migration 007 backfills to the demo user.
+
+
 @router.get("", response_model=list[AlertOut])
 def list_alerts(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
     status_filter: str | None = Query(None, alias="status"),
 ) -> list[AlertOut]:
-    q = select(Alert).order_by(Alert.created_at.desc())
+    q = (
+        select(Alert)
+        .where(Alert.user_id == _user.id)
+        .order_by(Alert.created_at.desc())
+    )
     if status_filter == "active":
         q = q.where(Alert.status == "unresolved")
     elif status_filter == "resolved":
@@ -72,7 +81,7 @@ def resolve_alert(
     _user: User = Depends(get_current_user),
 ) -> AlertOut:
     a = db.get(Alert, alert_id)
-    if a is None:
+    if a is None or (a.user_id is not None and a.user_id != _user.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
     if a.status == "resolved":
         return _to_out(db, a)

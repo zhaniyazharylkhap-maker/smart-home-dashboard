@@ -16,7 +16,7 @@ def latest_telemetry(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> LatestTelemetryResponse:
-    readings = get_latest_per_device(db)
+    readings = get_latest_per_device(db, user_id=_user.id)
     return LatestTelemetryResponse(readings=readings)
 
 
@@ -32,6 +32,7 @@ def telemetry_history(
     try:
         return get_history(
             db,
+            user_id=_user.id,
             metric=metric,
             range_key=range_key,
             room_name=room,

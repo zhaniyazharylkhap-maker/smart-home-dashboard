@@ -127,12 +127,14 @@ def _create_alert(
     risk_score: float | None = None,
     risk_level: str | None = None,
     alert_reasons: list[str] | None = None,
+    user_id: int | None = None,
 ) -> Alert | None:
     if device_pk is not None and _has_open_alert(db, device_pk, alert_type):
         return None
     row = Alert(
         room_id=room_id,
         device_id=device_pk,
+        user_id=user_id,
         alert_type=alert_type,
         severity=severity,
         title=title,
@@ -243,6 +245,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -262,6 +265,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -281,6 +285,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -300,6 +305,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -323,6 +329,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -348,6 +355,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -366,6 +374,7 @@ def _apply_rules(
             risk_score=risk.risk_score,
             risk_level=risk.risk_level,
             alert_reasons=risk.alert_reasons,
+            user_id=device.user_id,
         )
         if a:
             _emit_alert(db, device, a)
@@ -393,6 +402,7 @@ def _apply_rules(
                 risk_score=risk.risk_score,
                 risk_level=risk.risk_level,
                 alert_reasons=risk.alert_reasons,
+                user_id=device.user_id,
             )
             if a:
                 _emit_alert(db, device, a)
@@ -452,6 +462,7 @@ def emit_anomaly_alert(
         risk_score=risk.risk_score,
         risk_level=risk.risk_level,
         alert_reasons=[f"anomaly_score={anomaly_score:.4f}"],
+        user_id=device.user_id,
     )
     if a:
         _emit_alert(db, device, a)

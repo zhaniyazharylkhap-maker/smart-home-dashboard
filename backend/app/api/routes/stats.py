@@ -19,7 +19,10 @@ def dashboard_stats(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> DashboardStatsOut:
-    devices = db.execute(select(Device)).scalars().all()
+    # Tenant-scoped counts: every aggregate is filtered by current_user.id.
+    devices = db.execute(
+        select(Device).where(Device.user_id == _user.id)
+    ).scalars().all()
     now = datetime.now(timezone.utc)
     online = 0
     for d in devices:
@@ -32,19 +35,29 @@ def dashboard_stats(
             online += 1
 
     active = db.execute(
-        select(func.count()).select_from(Alert).where(Alert.status == "unresolved")
+        select(func.count())
+        .select_from(Alert)
+        .where(Alert.user_id == _user.id, Alert.status == "unresolved")
     ).scalar_one()
     active_int = int(active)
 
     crit = db.execute(
         select(func.count())
         .select_from(Alert)
-        .where(Alert.status == "unresolved", Alert.severity == "critical")
+        .where(
+            Alert.user_id == _user.id,
+            Alert.status == "unresolved",
+            Alert.severity == "critical",
+        )
     ).scalar_one()
     warn = db.execute(
         select(func.count())
         .select_from(Alert)
-        .where(Alert.status == "unresolved", Alert.severity == "warning")
+        .where(
+            Alert.user_id == _user.id,
+            Alert.status == "unresolved",
+            Alert.severity == "warning",
+        )
     ).scalar_one()
 
     if int(crit) > 0:

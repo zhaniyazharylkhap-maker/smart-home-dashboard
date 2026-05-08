@@ -1,8 +1,26 @@
-"""Train baseline and Isolation Forest anomaly detectors on prepared data.
+"""Train baseline (Z-score) and Isolation Forest anomaly detectors.
 
-This script assumes `prepare_data.py` was executed and produced:
-- backend/ml/data.npy   (scaled, unified feature matrix)
-- backend/ml/scaler.pkl (saved StandardScaler)
+Inputs (produced by prepare_data.py):
+- backend/ml/data.npy    -- scaled feature matrix
+- backend/ml/labels.npy  -- rule-based proxy labels in {-1, +1}, raw-domain
+- backend/ml/scaler.pkl  -- fitted StandardScaler reused at inference
+
+Methodology note (read this before defending the thesis)
+--------------------------------------------------------
+Real labeled IoT-anomaly datasets at home scale are unavailable, so we use
+RULE-BASED PROXY LABELS derived from physical thresholds (temperature,
+gas, smoke, delta_temp) computed on the RAW feature matrix in
+prepare_data.py. The metric reported here is therefore the agreement
+between the unsupervised IsolationForest model and a hand-crafted rule
+set -- not detection of unknown failure modes. Strengths and limitations:
+
+  + Rules operate in physical units, so labels are interpretable.
+  + Labels are fixed before training; no synthetic perturbation of test
+    samples is applied (which would be circular evaluation).
+  - Perfect agreement would imply the model is redundant with the rules.
+  - The metric does not bound performance on unseen failure modes.
+  - Extension: replace with a labeled benchmark (NAB / SWaT / WADI) for a
+    stronger evaluation.
 """
 
 from __future__ import annotations
@@ -20,40 +38,15 @@ from sklearn.model_selection import train_test_split
 
 ML_DIR = Path(__file__).resolve().parent
 DATA_PATH = ML_DIR / "data.npy"
+LABELS_PATH = ML_DIR / "labels.npy"
 MODEL_PATH = ML_DIR / "model.pkl"
 FloatArray = npt.NDArray[np.float64]
+IntArray = npt.NDArray[np.int64]
 
 
-def generate_rule_labels(X: FloatArray) -> np.ndarray:
-    """
-    Generate anomaly labels using domain rules.
-
-    Feature order:
-    [temperature, light, motion, gas, smoke, delta_temp, rolling_mean]
-    """
-    # Synthetic anomaly injection was removed because it can bias evaluation with
-    # artifacts that may not represent real IoT failure/safety conditions.
-    # In diploma-scale unsupervised anomaly detection, labeled IoT anomalies are
-    # often unavailable; therefore, rule-based proxy labels are a common and
-    # academically defensible way to estimate precision/recall/F1.
-    temperature = X[:, 0]
-    gas = X[:, 3]
-    smoke = X[:, 4]
-    delta_temp = X[:, 5]
-
-    rule_anomaly = (
-        (temperature > 35)
-        | (gas > 0.6)
-        | (smoke > 0.5)
-        | (np.abs(delta_temp) > 5)
-    )
-
-    y = np.ones(len(X))
-    y[rule_anomaly] = -1
-    return y.astype(int)
-
-
-def _baseline_zscore_predict(X_train: FloatArray, X_test: FloatArray, threshold: float = 3.0) -> np.ndarray:
+def _baseline_zscore_predict(
+    X_train: FloatArray, X_test: FloatArray, threshold: float = 3.0
+) -> np.ndarray:
     # Z-score is a transparent baseline with closed-form assumptions and no
     # learned tree structure, useful for thesis comparison against Isolation Forest.
     mean = X_train.mean(axis=0)
@@ -85,17 +78,32 @@ def _print_metrics(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> None:
 def main() -> None:
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"Missing prepared data: {DATA_PATH}. Run prepare_data.py first.")
+    if not LABELS_PATH.exists():
+        raise FileNotFoundError(
+            f"Missing labels: {LABELS_PATH}. Re-run prepare_data.py to regenerate "
+            "labels.npy (rules are evaluated on raw values there)."
+        )
 
     X = cast(FloatArray, np.load(DATA_PATH))
+    y = cast(IntArray, np.load(LABELS_PATH))
     if X.ndim != 2:
         raise ValueError("Expected 2D feature matrix in data.npy.")
+    if y.shape[0] != X.shape[0]:
+        raise ValueError(
+            f"Label/feature length mismatch: y={y.shape[0]}, X={X.shape[0]}. "
+            "Regenerate both with prepare_data.py."
+        )
 
-    X_train, X_test = cast(tuple[FloatArray, FloatArray], train_test_split(X, test_size=0.3, random_state=42, shuffle=True))
-    y_true = generate_rule_labels(X_test)
-    num_anomalies = int((y_true == -1).sum())
-    total = len(y_true)
-    print(f"Total samples: {total}")
-    print(f"Rule-based anomalies: {num_anomalies} ({num_anomalies / total:.2%})")
+    # Split features and labels together so y_test stays aligned to X_test.
+    X_train, X_test, _y_train, y_test = cast(
+        tuple[FloatArray, FloatArray, IntArray, IntArray],
+        train_test_split(X, y, test_size=0.3, random_state=42, shuffle=True),
+    )
+
+    num_anomalies = int((y_test == -1).sum())
+    total = len(y_test)
+    print(f"Test samples: {total}")
+    print(f"Rule-based anomalies in test: {num_anomalies} ({num_anomalies / total:.2%})")
     print()
 
     z_pred = _baseline_zscore_predict(X_train, X_test, threshold=3.0)
@@ -109,18 +117,16 @@ def main() -> None:
     print(f"Score range: min={scores.min():.4f}, max={scores.max():.4f}")
     print()
 
-    threshold = max(float(np.percentile(scores, 5)), 1e-6)
-    pred_5 = np.where(scores < threshold, -1, 1)
-    thr_5 = threshold
+    pred_5, thr_5 = _iforest_percentile_predict(scores, 5)
     pred_10, thr_10 = _iforest_percentile_predict(scores, 10)
 
     # Threshold tuning exposes the precision/recall trade-off: 5% is stricter and
     # usually improves precision, while 10% is more sensitive and usually improves
     # recall. In safety-oriented systems, a lower recall may still be acceptable
     # when each alert triggers costly manual checks and high precision is required.
-    _print_metrics("Z-score", y_true, z_pred)
-    _print_metrics("Isolation Forest (5%)", y_true, pred_5)
-    _print_metrics("Isolation Forest (10%)", y_true, pred_10)
+    _print_metrics("Z-score", y_test, z_pred)
+    _print_metrics("Isolation Forest (5%)", y_test, pred_5)
+    _print_metrics("Isolation Forest (10%)", y_test, pred_10)
     print("Thresholds:")
     print(f"p5={thr_5:.6f}")
     print(f"p10={thr_10:.6f}")

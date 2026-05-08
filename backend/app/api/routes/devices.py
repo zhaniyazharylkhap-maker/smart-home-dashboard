@@ -24,6 +24,16 @@ def _to_out(device: Device, room: Room) -> DeviceOut:
     )
 
 
+# Multi-tenancy: every read/write is scoped to current_user.id. Rows with a
+# NULL user_id (pre-migration-007 leftovers) remain visible only to the seeded
+# demo user via the backfill in 007; new writes always set user_id.
+
+
+def _owns(obj_user_id: int | None, current_user_id: int) -> bool:
+    """Allow ownership-checks to pass for unowned rows (legacy) and for matches."""
+    return obj_user_id is None or obj_user_id == current_user_id
+
+
 @router.get("", response_model=list[DeviceOut])
 def list_devices(
     db: Session = Depends(get_db),
@@ -32,6 +42,7 @@ def list_devices(
     rows = db.execute(
         select(Device, Room)
         .join(Room, Device.room_id == Room.id)
+        .where(Device.user_id == _user.id)
         .order_by(Device.device_id)
     ).all()
     return [_to_out(d, r) for d, r in rows]
@@ -44,7 +55,7 @@ def create_device(
     _user: User = Depends(get_current_user),
 ) -> DeviceOut:
     room = db.get(Room, body.room_id)
-    if room is None:
+    if room is None or not _owns(room.user_id, _user.id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid room_id")
     existing = db.execute(
         select(Device).where(Device.device_id == body.device_id.strip())
@@ -57,6 +68,7 @@ def create_device(
         room_id=body.room_id,
         device_type=body.device_type,
         status="offline",
+        user_id=_user.id,
     )
     db.add(dev)
     db.commit()
@@ -71,7 +83,7 @@ def get_device(
     _user: User = Depends(get_current_user),
 ) -> DeviceOut:
     dev = db.get(Device, device_pk)
-    if dev is None:
+    if dev is None or not _owns(dev.user_id, _user.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     room = db.get(Room, dev.room_id)
     if room is None:
@@ -87,13 +99,13 @@ def update_device(
     _user: User = Depends(get_current_user),
 ) -> DeviceOut:
     dev = db.get(Device, device_pk)
-    if dev is None:
+    if dev is None or not _owns(dev.user_id, _user.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     if body.name is not None:
         dev.name = body.name.strip()
     if body.room_id is not None:
         room = db.get(Room, body.room_id)
-        if room is None:
+        if room is None or not _owns(room.user_id, _user.id):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid room_id")
         dev.room_id = body.room_id
     if body.device_type is not None:

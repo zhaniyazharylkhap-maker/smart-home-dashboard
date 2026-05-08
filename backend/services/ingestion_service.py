@@ -12,6 +12,7 @@ from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
 from services.risk_engine import compute_risk
 from app.services.telemetry_service import ensure_device, ensure_room
+from core.config import get_settings
 from core.redis_client import append_stream_event
 from services.alert_engine import evaluate_telemetry
 
@@ -63,8 +64,13 @@ def telemetry_ingest_from_dict(raw: dict) -> TelemetryIngest:
 
 def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
     received_at = datetime.now(timezone.utc)
-    room = ensure_room(db, payload.room)
-    device = ensure_device(db, payload.device_id, room, payload.device_id)
+    # MQTT-ingested telemetry carries no user identity; assign the configured
+    # default owner so multi-tenant filters in the API layer return data.
+    owner_user_id = get_settings().mqtt_default_owner_user_id
+    room = ensure_room(db, payload.room, user_id=owner_user_id)
+    device = ensure_device(
+        db, payload.device_id, room, payload.device_id, user_id=owner_user_id
+    )
     ts = payload.timestamp or received_at
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
