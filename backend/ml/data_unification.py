@@ -7,6 +7,11 @@ Inputs (paths configurable via env vars):
 - DATA_POS_CSV       per-room PIR occupancy: datetime + 5 room columns
 - SIM_DATASET_JSON   simulator/data/sensors_dataset.json (optional)
 
+If CSV env vars are unset, the loader looks for ``env_ref.csv``,
+``env_gas.csv``, and ``positions.csv`` under ``backend/ml/datasets/``
+when present. ``SIM_DATASET_JSON`` is still explicit only — set it if
+you want the simulator JSON folded into training.
+
 Outputs (in-memory `pandas.DataFrame`):
 - one row per environmental sample
 - timestamps aligned to UTC
@@ -27,7 +32,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 import numpy as np
 import pandas as pd
@@ -49,12 +54,39 @@ _POS_COLUMN_MAP = {
     "Kitchen": "kitchen",
     "Hallway": "hallway",
 }
-_POS_COLUMNS = list(_POS_COLUMN_MAP.keys())
+_POS_COLUMNS = tuple(_POS_COLUMN_MAP.keys())
+_ENV_USECOLS = (
+    "timestamp",
+    "temperature",
+    "humidity",
+    "CO2CosIRValue",
+    "MOX1",
+    "MOX2",
+    "MOX3",
+    "MOX4",
+    "COValue",
+)
+_ENV_USECOLS_SET = set(_ENV_USECOLS)
+_POS_USECOLS_SET = {"datetime", *_POS_COLUMNS}
+
+
+_ML_DIR = Path(__file__).resolve().parent
+_DATASETS_DIR = _ML_DIR / "datasets"
+
+
+def _path_from_env_or_default(env_key: str, default_path: Path | None) -> Path | None:
+    """Explicit env wins; otherwise use ``default_path`` if it exists."""
+    raw = os.environ.get(env_key, "").strip()
+    if raw:
+        return Path(raw)
+    if default_path is not None and default_path.is_file():
+        return default_path.resolve()
+    return None
 
 
 @dataclass(frozen=True)
 class UnificationConfig:
-    """Where to read each source from. All optional except env CSVs."""
+    """Where to read each source from. Env vars override repo defaults."""
 
     env_ref_csv: Path | None
     env_gas_csv: Path | None
@@ -64,15 +96,21 @@ class UnificationConfig:
 
     @classmethod
     def from_env(cls) -> "UnificationConfig":
-        def _opt(name: str) -> Path | None:
-            v = os.environ.get(name, "").strip()
-            return Path(v) if v else None
-
         return cls(
-            env_ref_csv=_opt("DATA_REF_CSV"),
-            env_gas_csv=_opt("DATA_GAS_CSV"),
-            pos_csv=_opt("DATA_POS_CSV"),
-            simulator_json=_opt("SIM_DATASET_JSON"),
+            env_ref_csv=_path_from_env_or_default(
+                "DATA_REF_CSV", _DATASETS_DIR / "env_ref.csv"
+            ),
+            env_gas_csv=_path_from_env_or_default(
+                "DATA_GAS_CSV", _DATASETS_DIR / "env_gas.csv"
+            ),
+            pos_csv=_path_from_env_or_default(
+                "DATA_POS_CSV", _DATASETS_DIR / "positions.csv"
+            ),
+            simulator_json=(
+                Path(p)
+                if (p := os.environ.get("SIM_DATASET_JSON", "").strip())
+                else None
+            ),
             sample_stride=max(1, int(os.environ.get("SAMPLE_STRIDE", "5"))),
         )
 
@@ -81,17 +119,7 @@ def _read_env_csv(path: Path) -> pd.DataFrame:
     """Read one env-style CSV and project it onto the canonical columns."""
     df = pd.read_csv(
         path,
-        usecols=[
-            "timestamp",
-            "temperature",
-            "humidity",
-            "CO2CosIRValue",
-            "MOX1",
-            "MOX2",
-            "MOX3",
-            "MOX4",
-            "COValue",
-        ],
+        usecols=lambda col: col in _ENV_USECOLS_SET,
     )
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
@@ -105,7 +133,10 @@ def _read_env_csv(path: Path) -> pd.DataFrame:
     df["light"] = df["CO2CosIRValue"].astype(float) / 1024.0
     df["temperature"] = df["temperature"].astype(float)
     df["humidity"] = df["humidity"].astype(float)
-    df = df[["timestamp", "temperature", "humidity", "gas", "smoke", "light"]]
+    df = cast(
+        pd.DataFrame,
+        df[["timestamp", "temperature", "humidity", "gas", "smoke", "light"]],
+    )
     return df.reset_index(drop=True)
 
 
@@ -116,7 +147,7 @@ def _read_pos_csv(path: Path) -> pd.DataFrame:
     forward-fill per column so any timestamp can be queried for the most
     recent known state of every room.
     """
-    df = pd.read_csv(path, usecols=["datetime", *_POS_COLUMNS])
+    df = pd.read_csv(path, usecols=lambda col: col in _POS_USECOLS_SET)
     df = df.rename(columns={"datetime": "timestamp"})
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
@@ -131,7 +162,7 @@ def _read_pos_csv(path: Path) -> pd.DataFrame:
     df["any_motion"] = (df["occupancy_total"] > 0).astype(float)
 
     keep = ["timestamp", "occupancy_total", "any_motion", *_POS_COLUMNS]
-    return df[keep].reset_index(drop=True)
+    return cast(pd.DataFrame, df[keep]).reset_index(drop=True)
 
 
 def _join_env_with_occupancy(
