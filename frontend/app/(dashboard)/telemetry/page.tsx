@@ -30,6 +30,7 @@ import {
   fetchRooms,
   fetchTelemetryHistory,
 } from "@/lib/api";
+import { ACCENT_HEX } from "@/lib/brand";
 import type { DeviceRow, Room, TelemetryHistoryResponse } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import type { TelemetryReading } from "@/types/telemetry";
@@ -59,7 +60,7 @@ const RANGES = [
 ] as const;
 
 const METRIC_COLORS: Record<MetricKey, string> = {
-  temperature: "#22d3ee",
+  temperature: ACCENT_HEX,
   humidity: "#3b82f6",
   gas: "#f59e0b",
   smoke: "#ef4444",

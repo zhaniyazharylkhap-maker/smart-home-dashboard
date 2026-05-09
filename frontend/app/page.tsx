@@ -49,13 +49,13 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-6">
           <Link href="/" className="flex items-center gap-2">
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-strong bg-surface">
-              <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+              <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(20,195,166,0.55)]" />
             </span>
-            <span className="font-display text-base font-semibold tracking-[0.2em] text-text-primary">
-              NEXUS
+            <span className="font-display text-base font-semibold tracking-[0.12em] text-text-primary">
+              LiveSense
             </span>
             <span className="hidden text-[10px] font-medium uppercase tracking-[0.16em] text-text-dim md:inline">
-              Smart Home Analytics
+              Home intelligence
             </span>
           </Link>
           <div className="flex items-center gap-2">
@@ -84,17 +84,15 @@ export default function LandingPage() {
             transition={{ duration: 0.4 }}
           >
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-accent">
-              Real-time IoT Analytics Platform
+              LiveSense
             </p>
-            <h1 className="mx-auto mt-4 max-w-4xl font-display text-[34px] font-semibold leading-tight md:text-[56px]">
-              The system that{" "}
-              <span className="text-accent">understands</span> behavior
-              patterns.
+            <h1 className="mx-auto mt-4 max-w-4xl font-display text-[34px] font-semibold leading-tight md:text-[52px]">
+              Transparent analytics for{" "}
+              <span className="text-accent">smart homes.</span>
             </h1>
             <p className="mx-auto mt-5 max-w-[640px] text-base font-light text-text-secondary md:text-[17px]">
-              Live telemetry, contextual anomaly detection, learned-normal
-              behavior, and operational metrics — explainable AI for smart
-              homes, not a black box.
+              Transparent analytics for smart homes. Live telemetry. Contextual
+              anomalies.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link
@@ -219,7 +217,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="pb-8 pt-4 text-center text-[11px] font-light text-text-dim">
-        Nexus Smart Home Platform · diploma project
+        LiveSense · transparent home telemetry
       </footer>
     </div>
   );

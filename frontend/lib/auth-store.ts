@@ -22,6 +22,6 @@ export const useAuthStore = create<AuthState>()(
       setSession: (token, user) => set({ token, user }),
       clearSession: () => set({ token: null, user: null }),
     }),
-    { name: "nexus-auth" }
+    { name: "livesense-auth" }
   )
 );

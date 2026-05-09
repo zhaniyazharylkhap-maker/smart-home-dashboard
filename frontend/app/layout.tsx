@@ -9,8 +9,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Smart Home Cloud",
-  description: "AI-powered IoT smart home monitoring platform",
+  title: "LiveSense",
+  description:
+    "Transparent analytics for smart homes. Live telemetry. Contextual anomalies.",
 };
 
 export default function RootLayout({

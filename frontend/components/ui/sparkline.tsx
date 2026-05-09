@@ -2,6 +2,8 @@
 
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 
+import { ACCENT_HEX } from "@/lib/brand";
+
 type SparklineProps = {
   values: (number | null)[];
   stroke?: string;
@@ -12,7 +14,7 @@ type SparklineProps = {
 
 export function Sparkline({
   values,
-  stroke = "#22d3ee",
+  stroke = ACCENT_HEX,
   fill,
   height = 36,
   className,

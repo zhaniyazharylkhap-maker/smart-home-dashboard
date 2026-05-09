@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
 import { apiFetch, publicApiFetch } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
+import { DEMO_ADMIN_EMAIL } from "@/lib/brand";
 
 type TokenOut = { access_token: string; token_type: string };
 type MeOut = { id: number; name: string; email: string; created_at: string };
@@ -16,7 +17,7 @@ type MeOut = { id: number; name: string; email: string; created_at: string };
 export default function LoginPage() {
   const router = useRouter();
   const setSession = useAuthStore((s) => s.setSession);
-  const [email, setEmail] = useState("demo@nexus.local");
+  const [email, setEmail] = useState(DEMO_ADMIN_EMAIL);
   const [password, setPassword] = useState("Demo123!");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,14 +55,14 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px] rounded-card border border-border bg-surface p-6 shadow-panel md:p-8">
         <div className="mb-6 flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border-strong bg-surface-2">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-accent shadow-[0_0_10px_rgba(34,211,238,0.7)]" />
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-accent shadow-[0_0_10px_rgba(20,195,166,0.55)]" />
           </span>
           <div>
-            <p className="font-display text-lg font-semibold tracking-[0.2em] text-text-primary">
-              NEXUS
+            <p className="font-display text-lg font-semibold tracking-[0.08em] text-text-primary">
+              LiveSense
             </p>
             <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-text-dim">
-              Smart Home Analytics
+              Transparent analytics for smart homes
             </p>
           </div>
         </div>
@@ -70,8 +71,7 @@ export default function LoginPage() {
           Sign in
         </h1>
         <p className="mt-1 text-sm font-light text-text-secondary">
-          Operator console for live IoT telemetry, anomaly intelligence, and
-          fleet health.
+          Live telemetry. Contextual anomalies. Operational clarity.
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
@@ -115,9 +115,9 @@ export default function LoginPage() {
 
         <div className="mt-5 rounded-md border border-border bg-surface-2/60 p-3">
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-text-dim">
-            Demo credentials
+            Seeded account
           </p>
-          <p className="mono text-xs text-text-secondary">demo@nexus.local</p>
+          <p className="mono text-xs text-text-secondary">{DEMO_ADMIN_EMAIL}</p>
           <p className="mono text-xs text-text-secondary">Demo123!</p>
         </div>
 

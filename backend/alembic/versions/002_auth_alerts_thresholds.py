@@ -83,7 +83,7 @@ def upgrade() -> None:
             WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = :email)
             """
         ),
-        {"name": "Demo User", "email": "demo@nexus.local", "password_hash": DEMO_HASH},
+        {"name": "Admin", "email": "admin@livesense.com", "password_hash": DEMO_HASH},
     )
 
     conn.execute(

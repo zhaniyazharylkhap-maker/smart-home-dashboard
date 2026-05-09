@@ -1,0 +1,17 @@
+# Docker ignores .gitignore — without this, host node_modules /.next overwrite
+# the deps stage and can break linux ARM/amd builds (broken SWC/webpack, EROFS).
+
+node_modules
+.next
+out
+
+.git
+.github
+
+*.md
+.env
+.env.*
+
+npm-debug.log*
+.DS_Store
+coverage

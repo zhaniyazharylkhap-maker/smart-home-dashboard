@@ -25,6 +25,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
 import { fetchAnomalyHistory, fetchDevices } from "@/lib/api";
+import { ACCENT_HEX } from "@/lib/brand";
 import { humanizeRoom } from "@/lib/explanations";
 import type {
   AnomalyHistoryResponse,
@@ -263,8 +264,8 @@ export default function AnomalyPage() {
               <ComposedChart data={chartData}>
                 <defs>
                   <linearGradient id="score-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                    <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={ACCENT_HEX} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="2 6" stroke="#1f2a3a" />
@@ -306,7 +307,7 @@ export default function AnomalyPage() {
                   type="monotone"
                   dataKey="score"
                   name="Score"
-                  stroke="#22d3ee"
+                  stroke={ACCENT_HEX}
                   strokeWidth={2}
                   fill="url(#score-fill)"
                   isAnimationActive={false}

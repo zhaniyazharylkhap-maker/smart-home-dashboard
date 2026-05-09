@@ -26,7 +26,7 @@ type Props = {
 };
 
 function colorFor(score: number, max: number): string {
-  if (max <= 0) return "rgba(34,211,238,0.06)";
+  if (max <= 0) return "rgba(20,195,166,0.06)";
   const t = Math.max(0, Math.min(1, score / max));
   if (t < 0.5) {
     const k = t / 0.5;
@@ -114,7 +114,7 @@ export function BehavioralHeatmap({
           <span className="inline-flex items-center gap-1">
             <span
               className="inline-block h-2 w-4 rounded"
-              style={{ background: "rgba(34,211,238,0.55)" }}
+              style={{ background: "rgba(20,195,166,0.55)" }}
             />
             calm
           </span>

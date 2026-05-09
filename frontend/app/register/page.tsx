@@ -53,14 +53,14 @@ export default function RegisterPage() {
       <div className="w-full max-w-[420px] rounded-card border border-border bg-surface p-6 shadow-panel md:p-8">
         <div className="mb-6 flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border-strong bg-surface-2">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-accent shadow-[0_0_10px_rgba(34,211,238,0.7)]" />
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-accent shadow-[0_0_10px_rgba(20,195,166,0.55)]" />
           </span>
           <div>
-            <p className="font-display text-lg font-semibold tracking-[0.2em] text-text-primary">
-              NEXUS
+            <p className="font-display text-lg font-semibold tracking-[0.08em] text-text-primary">
+              LiveSense
             </p>
             <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-text-dim">
-              Smart Home Analytics
+              Transparent analytics for smart homes
             </p>
           </div>
         </div>
@@ -69,7 +69,8 @@ export default function RegisterPage() {
           Create account
         </h1>
         <p className="mt-1 text-sm font-light text-text-secondary">
-          Spin up your operator workspace and start monitoring your fleet.
+          Transparent analytics for smart homes. Live telemetry. Contextual
+          anomalies.
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>

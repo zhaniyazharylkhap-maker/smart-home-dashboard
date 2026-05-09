@@ -1,7 +1,7 @@
 """user scoping on rooms/devices/alerts
 
 Adds nullable user_id FKs so existing single-tenant data keeps working,
-backfills all pre-existing rows to the seeded demo user, and indexes the
+backfills all pre-existing rows to the seeded admin account, and indexes the
 new column for the per-user list queries.
 
 Kept nullable on purpose: the column is logically required at the
@@ -47,11 +47,11 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_alerts_user_id"), "alerts", ["user_id"], unique=False)
 
-    # Backfill pre-existing rows to the seeded demo user (created in 002).
-    # Skipped silently if the demo user is absent (e.g. test fixtures).
+    # Backfill pre-existing rows to the seeded admin account (created in 002).
+    # Skipped silently if the seeded user is absent (e.g. test fixtures).
     conn = op.get_bind()
     demo_user_id = conn.execute(
-        text("SELECT id FROM users WHERE email = 'demo@nexus.local' LIMIT 1")
+        text("SELECT id FROM users WHERE email = 'admin@livesense.com' LIMIT 1")
     ).scalar()
     if demo_user_id is not None:
         conn.execute(

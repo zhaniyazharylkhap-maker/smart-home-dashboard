@@ -32,10 +32,10 @@ export function AppSidebar() {
     <aside className="hidden min-h-screen flex-col border-r border-border bg-surface md:flex md:w-16 lg:w-[228px]">
       <div className="flex items-center gap-2 px-3 py-5 lg:px-4">
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-strong bg-surface-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+          <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(20,195,166,0.55)]" />
         </span>
-        <p className="hidden font-display text-base font-semibold tracking-[0.18em] text-text-primary lg:block">
-          NEXUS
+        <p className="hidden font-display text-base font-semibold tracking-[0.06em] text-text-primary lg:block">
+          LiveSense
         </p>
       </div>
       <nav className="flex-1 space-y-0.5 px-2">
@@ -57,7 +57,7 @@ export function AppSidebar() {
                 {active ? (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-y-1 left-0 hidden w-[3px] rounded-r-full bg-accent shadow-[0_0_8px_rgba(34,211,238,0.6)] lg:block"
+                    className="absolute inset-y-1 left-0 hidden w-[3px] rounded-r-full bg-accent shadow-[0_0_8px_rgba(20,195,166,0.45)] lg:block"
                   />
                 ) : null}
                 <Icon

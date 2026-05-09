@@ -22,7 +22,7 @@ docker compose up --build
 Leave that terminal open. In the browser:
 
 - Landing: [http://localhost:3000/](http://localhost:3000/)
-- Sign in: [http://localhost:3000/login](http://localhost:3000/login) — demo **`demo@nexus.local` / `Demo123!`** (seeded after migration **002**)
+- Sign in: [http://localhost:3000/login](http://localhost:3000/login) — seeded admin **`admin@livesense.com` / `Demo123!`** (migration **002**; databases that already ran an older **002** are updated by **009**)
 - Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
 - API docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - Health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
@@ -40,7 +40,7 @@ JWT auth protects data APIs and WebSockets. The browser stores the token (Zustan
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"demo@nexus.local","password":"Demo123!"}'
+  -d '{"email":"admin@livesense.com","password":"Demo123!"}'
 ```
 
 Optional: set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if your API is not on `127.0.0.1:8000`.

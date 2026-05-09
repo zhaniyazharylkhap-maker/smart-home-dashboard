@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { ThresholdBandChart } from "@/components/analytics/threshold-band-chart";
 import { Card, CardSectionLabel } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ACCENT_HEX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import type { LiveTelemetryPoint } from "@/hooks/use-live-telemetry";
 import type { TelemetryReading } from "@/types/telemetry";
@@ -106,7 +107,7 @@ export function AnalyticsPanel({
               {
                 key: "temperature",
                 label: "Temperature",
-                stroke: "#22d3ee",
+                stroke: ACCENT_HEX,
                 unit: "°C",
               },
             ]}
@@ -165,7 +166,7 @@ export function AnalyticsPanel({
               {
                 key: "a",
                 label: compareA || deviceOptions[0] || "device A",
-                stroke: "#22d3ee",
+                stroke: ACCENT_HEX,
                 unit: "°C",
               },
               {

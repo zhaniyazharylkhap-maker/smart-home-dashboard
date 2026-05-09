@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardSectionLabel } from "@/components/ui/card";
 import { Sparkline } from "@/components/ui/sparkline";
 import { TrendArrow } from "@/components/ui/trend-arrow";
+import { ACCENT_HEX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import type {
   LiveAnomalyDeviceState,
@@ -94,7 +95,7 @@ export function LiveAnomalyScoreCard({
     return Math.max(0, Math.min(1, ratio));
   })();
 
-  const stroke = breach ? "#ef4444" : "#22d3ee";
+  const stroke = breach ? "#ef4444" : ACCENT_HEX;
 
   return (
     <Card

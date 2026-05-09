@@ -5,6 +5,7 @@ import { Activity, AlertTriangle, Gauge, RefreshCw, Wifi } from "lucide-react";
 
 import { Card, CardSectionLabel } from "@/components/ui/card";
 import { Sparkline } from "@/components/ui/sparkline";
+import { ACCENT_HEX } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import type { LiveTelemetryPoint } from "@/hooks/use-live-telemetry";
 
@@ -135,7 +136,7 @@ export function OperationalMetricsPanel({
               : `p95 ${Math.round(latencyStats.p95)}ms`
           }
           spark={latencySpark}
-          stroke="#22d3ee"
+          stroke={ACCENT_HEX}
         />
         <Tile
           icon={<Activity className="h-4 w-4" />}
@@ -238,7 +239,7 @@ function Tile({
   primary,
   secondary,
   spark,
-  stroke = "#22d3ee",
+  stroke = ACCENT_HEX,
   tone = "default",
 }: {
   icon?: React.ReactNode;

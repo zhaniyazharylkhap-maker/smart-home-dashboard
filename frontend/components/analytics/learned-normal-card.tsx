@@ -17,6 +17,7 @@ import {
 import { Card, CardSectionLabel } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchBehaviorProfile } from "@/lib/api";
+import { ACCENT_HEX } from "@/lib/brand";
 import type { BehaviorProfileResponse } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
@@ -180,8 +181,8 @@ export function LearnedNormalCard({
             <ComposedChart data={series}>
               <defs>
                 <linearGradient id="learned-band" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="#22d3ee" stopOpacity={0.04} />
+                  <stop offset="0%" stopColor={ACCENT_HEX} stopOpacity={0.22} />
+                  <stop offset="100%" stopColor={ACCENT_HEX} stopOpacity={0.04} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="2 6" stroke="#1f2a3a" />
@@ -224,7 +225,7 @@ export function LearnedNormalCard({
               <Line
                 type="monotone"
                 dataKey="p50"
-                stroke="#22d3ee"
+                stroke={ACCENT_HEX}
                 strokeWidth={2}
                 dot={false}
                 name="Median"

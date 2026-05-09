@@ -28,7 +28,7 @@ docker compose up --build
 ```
 
 3. Wait until **backend**, **frontend**, **postgres**, **redis**, **mqtt**, and **simulator** are running (simulator pushes telemetry ~1/s).
-4. Open **http://localhost:3000/login** — demo user **`demo@nexus.local` / `Demo123!`** (see SETUP). The UI talks to the API at **http://127.0.0.1:8000**; live tiles need **Redis** (included in compose).
+4. Open **http://localhost:3000/login** — seeded admin **`admin@livesense.com` / `Demo123!`** (see SETUP). The UI talks to the API at **http://127.0.0.1:8000**; live tiles need **Redis** (included in compose).
 5. Use the dashboard (**/dashboard**, **/telemetry**, etc.). API docs: **http://127.0.0.1:8000/docs**.
 
 If `docker compose` errors on port **5432**, ensure `docker/.env` contains `POSTGRES_PORT=5433` (or stop the other process using 5432).

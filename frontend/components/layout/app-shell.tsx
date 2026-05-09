@@ -41,11 +41,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="flex items-center gap-2 font-display text-sm font-semibold tracking-wide text-text-primary transition-colors hover:text-accent"
           >
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border-strong bg-surface">
-              <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+              <span className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(20,195,166,0.55)]" />
             </span>
-            <span className="font-display tracking-[0.18em]">NEXUS</span>
+            <span className="font-display tracking-[0.08em]">LiveSense</span>
             <span className="hidden text-[10px] font-light uppercase tracking-[0.16em] text-text-dim md:inline">
-              Smart Home Analytics
+              Transparent home analytics
             </span>
           </Link>
           <div className="text-right">
