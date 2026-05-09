@@ -54,7 +54,9 @@ _POS_COLUMN_MAP = {
     "Kitchen": "kitchen",
     "Hallway": "hallway",
 }
-_POS_COLUMNS = tuple(_POS_COLUMN_MAP.keys())
+# NOTE: Must be a list for `df[_POS_COLUMNS]`; a tuple makes pandas treat it
+# as a single MultiIndex key.
+_POS_COLUMNS = list(_POS_COLUMN_MAP.keys())
 _ENV_USECOLS = (
     "timestamp",
     "temperature",
