@@ -35,6 +35,7 @@ export type LiveTelemetryPoint = {
   is_contextual_anomaly: boolean;
   explanation_tokens: string[];
   model_version: string | null;
+  t_sim: number | null;
 };
 
 export type LiveAnomalyDeviceState = {
@@ -386,6 +387,8 @@ export function useLiveTelemetry() {
                   is_contextual_anomaly: contextualAnomaly,
                   explanation_tokens: reading.explanation_tokens ?? [],
                   model_version: reading.model_version ?? null,
+                  t_sim:
+                    typeof reading.t_sim === "number" ? reading.t_sim : null,
                 },
               ].slice(-1200)
             );

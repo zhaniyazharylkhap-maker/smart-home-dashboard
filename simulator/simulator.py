@@ -38,6 +38,13 @@ import paho.mqtt.client as mqtt
 
 DEFAULT_TOPIC = "smarthome/telemetry"
 ROOMS = ["bedroom", "kitchen", "living_room"]
+# Live injection sessions (Chapter 4): +INJECTION_DELTA_C for INJECTION_DURATION_TICKS
+# every INJECTION_PERIOD_TICKS global ticks, rotated across rooms.
+INJECTION_DELTA_C = float(os.environ.get("INJECTION_DELTA_C", "15"))
+INJECTION_SESSIONS = int(os.environ.get("INJECTION_SESSIONS", "4"))
+INJECTION_DURATION_TICKS = int(os.environ.get("INJECTION_DURATION_TICKS", "90"))
+INJECTION_PERIOD_TICKS = int(os.environ.get("INJECTION_PERIOD_TICKS", "600"))
+INJECTION_ENABLED = os.environ.get("INJECTION_ENABLED", "").lower() in ("1", "true", "yes")
 
 
 _should_stop = False
@@ -142,6 +149,18 @@ def _synth_channels(
     )
 
 
+def _injection_active(tick: int, room: str) -> bool:
+    if not INJECTION_ENABLED or INJECTION_PERIOD_TICKS <= 0:
+        return False
+    # One room per session slot; sessions spaced across the global timeline.
+    session = (tick // INJECTION_PERIOD_TICKS) % max(INJECTION_SESSIONS, 1)
+    active_room = ROOMS[session % len(ROOMS)]
+    if room != active_room:
+        return False
+    phase = tick % INJECTION_PERIOD_TICKS
+    return phase < INJECTION_DURATION_TICKS
+
+
 def row_to_telemetry(
     room: str,
     row: dict,
@@ -156,10 +175,13 @@ def row_to_telemetry(
         else bool(int(raw_motion) if str(raw_motion).strip() not in ("", "None") else 0)
     )
     humidity, gas, smoke = _synth_channels(room, tick, motion, spike_probability)
+    temperature = float(row["temperature"])
+    if _injection_active(tick, room):
+        temperature += INJECTION_DELTA_C
     return {
         "device_id": f"{room}_sensor_01",
         "room": room,
-        "temperature": float(row["temperature"]),
+        "temperature": temperature,
         "humidity": humidity,
         "light": float(row["light"]),
         "motion": motion,
@@ -206,7 +228,8 @@ def main() -> None:
     print(
         f"[simulator] connected {host}:{port} topic={topic} rows={len(rows)} "
         f"dataset_device={device_id} rooms={ROOMS} interval_sec={interval} "
-        f"spike_probability={spike_probability}"
+        f"spike_probability={spike_probability} "
+        f"injection_enabled={INJECTION_ENABLED}"
     )
     # Per-room dataset cursor offsets so the rooms walk through the
     # short dataset at different starting positions (one third apart),

@@ -5,14 +5,15 @@
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
-// Mac/PC running Docker MQTT (not "localhost" — LAN IP of that machine).
-#define MQTT_HOST "10.202.22.160"
+// Mac/PC running Docker MQTT — LAN IP of that machine (NOT localhost).
+// macOS: ipconfig getifaddr en0
+#define MQTT_HOST "192.168.1.137"
 #define MQTT_PORT 1883
 #define MQTT_USER "smarthome"
 #define MQTT_PASS "smarthome"
 #define MQTT_TOPIC "smarthome/telemetry"
 
-#define DEVICE_ID "esp32_commission_01"
+#define DEVICE_ID "esp32_kitchen_01"
 #define ROOM "kitchen"
 
 // Wiring (change if your board differs)

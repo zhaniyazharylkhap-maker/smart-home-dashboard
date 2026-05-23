@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -18,10 +18,12 @@ import {
   type ThresholdBandRow,
   type ThresholdBandSeries,
 } from "@/components/analytics/threshold-band-chart";
+import { RoomTelemetrySourceBar } from "@/components/room-telemetry-source-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardSectionLabel } from "@/components/ui/card";
 import { Sparkline } from "@/components/ui/sparkline";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
+import { useRoomTelemetryModes } from "@/hooks/use-room-telemetry-modes";
 import {
   fetchAlerts,
   fetchDashboardStats,
@@ -31,6 +33,10 @@ import {
   fetchTelemetryHistory,
 } from "@/lib/api";
 import { ACCENT_HEX } from "@/lib/brand";
+import {
+  readingsMatchRoomMode,
+  telemetryHistorySource,
+} from "@/lib/room-telemetry-mode";
 import type { DeviceRow, Room, TelemetryHistoryResponse } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import type { TelemetryReading } from "@/types/telemetry";
@@ -79,6 +85,30 @@ function metricUnit(metric: MetricKey): string {
 function fmt(value: number | null | undefined, digits = 1): string {
   if (value == null || Number.isNaN(value)) return "—";
   return value.toFixed(digits);
+}
+
+function metricValueFromReading(
+  reading: TelemetryReading,
+  metric: MetricKey
+): number | null {
+  switch (metric) {
+    case "temperature":
+      return reading.temperature;
+    case "humidity":
+      return reading.humidity;
+    case "gas":
+      return reading.gas;
+    case "smoke":
+      return reading.smoke;
+    case "light":
+      return reading.light;
+    case "motion":
+      if (reading.motion === true) return 1;
+      if (reading.motion === false) return 0;
+      return null;
+    default:
+      return null;
+  }
 }
 
 function SparkMetricCard({
@@ -147,6 +177,7 @@ export default function TelemetryPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const roomModes = useRoomTelemetryModes();
   const {
     readings,
     timeline,
@@ -167,7 +198,7 @@ export default function TelemetryPage() {
     })();
   }, []);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setErr(null);
     try {
@@ -179,11 +210,17 @@ export default function TelemetryPage() {
       const [histRes, latest, alerts, stats] = await Promise.all([
         Promise.all(
           targetMetrics.map(async (m) => {
+            const hs = telemetryHistorySource({
+              roomFilter: room,
+              deviceId: deviceId,
+              modes: roomModes.modes,
+            });
             const res = await fetchTelemetryHistory({
               metric: m,
               range,
               room: room || undefined,
               device_id: deviceId || undefined,
+              ...(hs ? { source: hs } : {}),
             });
             return [m, res] as const;
           })
@@ -207,29 +244,87 @@ export default function TelemetryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    range,
+    room,
+    deviceId,
+    viewMode,
+    singleMetric,
+    selectedMetrics,
+    roomModes.modes,
+  ]);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, room, deviceId, viewMode, singleMetric, selectedMetrics.join(",")]);
+  }, [load]);
 
   const filteredLatest = useMemo(() => {
     return latestTelemetry.filter((r) => {
       if (room && r.room !== room) return false;
       if (deviceId && r.device_id !== deviceId) return false;
+      if (room && !deviceId && !readingsMatchRoomMode(roomModes.modes, r))
+        return false;
       return true;
     });
-  }, [latestTelemetry, room, deviceId]);
+  }, [latestTelemetry, room, deviceId, roomModes.modes]);
+
+  const filteredReadingsWs = useMemo(
+    () => readings.filter((r) => readingsMatchRoomMode(roomModes.modes, r)),
+    [readings, roomModes.modes]
+  );
+
+  const filteredTimelineWs = useMemo(
+    () =>
+      timeline.filter((p) =>
+        readingsMatchRoomMode(roomModes.modes, {
+          room: p.room,
+          t_sim: p.t_sim,
+        })
+      ),
+    [timeline, roomModes.modes]
+  );
+
+  const filteredAnomalyByDeviceWs = useMemo(() => {
+    const byId = new Map(readings.map((rr) => [rr.device_id, rr]));
+    const out: typeof anomalyByDevice = {};
+    for (const [id, row] of Object.entries(anomalyByDevice)) {
+      const rr = byId.get(id);
+      if (!rr) continue;
+      if (!readingsMatchRoomMode(roomModes.modes, rr)) continue;
+      out[id] = row;
+    }
+    return out;
+  }, [anomalyByDevice, readings, roomModes.modes]);
+
+  const liveReadingsForFilters = useMemo(() => {
+    return filteredReadingsWs.filter((r) => {
+      if (room && r.room !== room) return false;
+      if (deviceId && r.device_id !== deviceId) return false;
+      return true;
+    });
+  }, [filteredReadingsWs, room, deviceId]);
+
+  const newestLiveReading = useMemo(() => {
+    if (liveReadingsForFilters.length === 0) return null;
+    return liveReadingsForFilters.reduce((best, cur) =>
+      new Date(cur.timestamp).getTime() > new Date(best.timestamp).getTime()
+        ? cur
+        : best
+    );
+  }, [liveReadingsForFilters]);
 
   const topReading = useMemo(() => {
-    if (filteredLatest.length === 0) return null;
-    return filteredLatest.reduce((best, cur) => {
+    const pool = [
+      ...filteredLatest,
+      ...(newestLiveReading ? [newestLiveReading] : []),
+    ];
+    if (pool.length === 0) return null;
+    return pool.reduce((best, cur) => {
       const b = best.risk_score ?? -1;
       const c = cur.risk_score ?? -1;
       return c > b ? cur : best;
     });
-  }, [filteredLatest]);
+  }, [filteredLatest, newestLiveReading]);
 
   const chartMetrics = useMemo(
     () => (viewMode === "single" ? [singleMetric] : selectedMetrics),
@@ -238,7 +333,7 @@ export default function TelemetryPage() {
 
   const chartData: ThresholdBandRow[] = useMemo(() => {
     const anomalyBuckets = new Set(
-      timeline
+      filteredTimelineWs
         .filter((p) => p.anomaly)
         .map((p) => new Date(p.timestamp).toISOString().slice(0, 16))
     );
@@ -267,7 +362,7 @@ export default function TelemetryPage() {
           anomaly: anomalyBuckets.has(anomalyKey) ? temp ?? null : null,
         };
       });
-  }, [histories, chartMetrics, timeline]);
+  }, [histories, chartMetrics, filteredTimelineWs]);
 
   const chartSeries: ThresholdBandSeries[] = useMemo(
     () =>
@@ -287,10 +382,45 @@ export default function TelemetryPage() {
     const out = {} as Record<MetricKey, number | null>;
     for (const m of METRICS.map((x) => x.id)) {
       const points = histories[m]?.points ?? [];
-      out[m] = points.length > 0 ? points[points.length - 1].v : null;
+      const fromHistory =
+        points.length > 0 ? points[points.length - 1].v : null;
+      const fromLive = newestLiveReading
+        ? metricValueFromReading(newestLiveReading, m)
+        : null;
+      out[m] = fromLive ?? fromHistory;
     }
     return out;
-  }, [histories]);
+  }, [histories, newestLiveReading]);
+
+  const sparkPointsByMetric = useMemo(() => {
+    const out = {} as Partial<
+      Record<MetricKey, { t: string; v: number | null }[]>
+    >;
+    for (const m of CARD_METRICS) {
+      const pts = (histories[m]?.points ?? []).map((p) => ({
+        t: p.t,
+        v: p.v,
+      }));
+      if (newestLiveReading) {
+        const v = metricValueFromReading(newestLiveReading, m);
+        const ts = newestLiveReading.timestamp;
+        if (v != null && ts) {
+          const last = pts[pts.length - 1];
+          const liveMs = new Date(ts).getTime();
+          const lastMs = last ? new Date(last.t).getTime() : 0;
+          if (!last || liveMs >= lastMs) {
+            if (last && lastMs === liveMs) {
+              pts[pts.length - 1] = { t: ts, v };
+            } else {
+              pts.push({ t: ts, v });
+            }
+          }
+        }
+      }
+      out[m] = pts;
+    }
+    return out;
+  }, [histories, newestLiveReading]);
 
   return (
     <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
@@ -329,6 +459,14 @@ export default function TelemetryPage() {
           icon={<Wifi className="h-4 w-4 text-safe" />}
           label="Devices active"
           value={devicesOnline}
+        />
+      </div>
+
+      <div className="mb-4">
+        <RoomTelemetrySourceBar
+          toggleRows={roomModes.toggleLabels}
+          modes={roomModes.modes}
+          onChange={roomModes.setModeForRoom}
         />
       </div>
 
@@ -535,15 +673,15 @@ export default function TelemetryPage() {
             key={m}
             metric={m}
             latest={latestByMetric[m]}
-            points={histories[m]?.points ?? []}
+            points={sparkPointsByMetric[m] ?? []}
           />
         ))}
       </div>
 
       <div className="mt-4">
         <AnalyticsPanel
-          timeline={timeline}
-          readings={readings}
+          timeline={filteredTimelineWs}
+          readings={filteredReadingsWs}
           anomalyThreshold={anomalyThreshold ?? 0.14}
           anomalyThresholdDynamic={anomalyThreshold != null}
         />
@@ -551,8 +689,8 @@ export default function TelemetryPage() {
 
       <div className="mt-4">
         <ContextualAnalyticsPanel
-          timeline={timeline}
-          anomalyByDevice={anomalyByDevice}
+          timeline={filteredTimelineWs}
+          anomalyByDevice={filteredAnomalyByDeviceWs}
           recentAnomalyEvents={recentAnomalyEvents}
           defaultMetric={
             primaryMetric === "motion" ? "temperature" : (primaryMetric as

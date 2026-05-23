@@ -42,5 +42,52 @@
     "delta_temp_c": 4.0,
     "proxy_quantile": 0.99,
     "context_quantile": 0.95
+  },
+  "ensemble": {
+    "weights": {
+      "isolation_forest": 0.7,
+      "lof": 0.3
+    },
+    "score_ranges": {
+      "isolation_forest": {
+        "lo": -0.23464145662602987,
+        "hi": 0.10835475952571194
+      },
+      "lof": {
+        "lo": -6.22044903979826,
+        "hi": 0.5585841178196702
+      }
+    },
+    "default_threshold": 27.72518530091248,
+    "default_threshold_quantile": 0.9072018169799488,
+    "train_anomaly_rate": 0.09279818302005119
+  },
+  "metrics": {
+    "label_self_consistency": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "isolation_forest": {
+      "precision": 0.4612655233589592,
+      "recall": 0.3410581547879318,
+      "f1": 0.39215686274509803
+    },
+    "lof": {
+      "precision": 0.151272833981366,
+      "recall": 0.9016178399650197,
+      "f1": 0.25907777358964695
+    },
+    "ensemble": {
+      "precision": 0.422792937399679,
+      "recall": 0.5758635767380849,
+      "f1": 0.48759718622732323
+    }
+  },
+  "thesis_metrics": {
+    "offline_injection_test_f1": 0.893,
+    "offline_proxy_test_f1": 0.488,
+    "live_injection_csv_f1": 0.676,
+    "report_path": "thesis_evaluation_report.json"
   }
 }

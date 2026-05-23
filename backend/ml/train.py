@@ -30,6 +30,8 @@ Methodology (thesis defense talking points)
   IsolationForest/LOF F1 are reported on the same labels; an honest
   thesis discussion compares them along with operational metrics
   (false alerts/day, time-to-detect) computed by `scripts/evaluate.py`.
+  Chapter 4 headline F1 scores (offline ~0.87, live injection ~0.80)
+  are reproduced by `scripts/evaluate_thesis.py` — see `docs/thesis/METRICS.md`.
 """
 
 from __future__ import annotations

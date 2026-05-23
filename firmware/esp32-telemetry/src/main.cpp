@@ -1,126 +1,316 @@
 /**
- * ESP32 telemetry publisher for smart-home-dashboard.
- *
- * - Reads photoresistor-style analog on PIN_LIGHT_ADC → "light" (lux-ish scale).
- * - Reads motion on PIN_MOTION (INPUT_PULLUP, LOW = motion).
- * - Publishes JSON to MQTT_TOPIC so the backend ingests in real time.
- *
- * Configure WiFi/MQTT in include/secrets.h (created from secrets.example.h on first build).
+ * ESP32 Smart Home Telemetry Publisher
+ * Realtime MQTT telemetry for smart-home-dashboard
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
-
-// Must be defined before PubSubClient.h (default 128 is too small for JSON)
-#define MQTT_MAX_PACKET_SIZE 512
 #include <PubSubClient.h>
+#include <Wire.h>
+#include <Adafruit_AHTX0.h>
 
 #include "secrets.h"
 
-#ifndef PIN_LIGHT_ADC
-#define PIN_LIGHT_ADC 34
-#endif
-#ifndef PIN_MOTION
-#define PIN_MOTION 27
-#endif
-#ifndef PUBLISH_INTERVAL_MS
-#define PUBLISH_INTERVAL_MS 1500
-#endif
+// =========================
+// MQTT
+// =========================
+
+#define MQTT_MAX_PACKET_SIZE 512
 
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 
+// =========================
+// AHT10
+// =========================
+
+Adafruit_AHTX0 aht;
+
+// =========================
+// VARIABLES
+// =========================
+
 unsigned long lastPublish = 0;
 
+// =========================
+// SETUP PINS
+// =========================
+
 static void setupPins() {
-  pinMode(PIN_MOTION, INPUT_PULLUP);
-  // PIN_LIGHT_ADC is input-only on many ESP32 modules; no pinMode required
+
+  pinMode(PIN_MOTION, INPUT);
+
+  pinMode(PIN_LED, OUTPUT);
+
 }
+
+// =========================
+// LIGHT SENSOR
+// =========================
 
 static float readLightLux() {
+
   int raw = analogRead(PIN_LIGHT_ADC);
-  if (raw < 0) {
-    raw = 0;
+
+  // Convert ADC to voltage
+  float voltage = raw * (3.3 / 4095.0);
+
+  // Approximate lux conversion for TEMT6000
+  float lux = voltage * 500.0;
+
+  if (lux < 0) {
+    lux = 0;
   }
-  // Map 0..4095 (typical 12-bit) to 0..1200 lux — demo scale, tune for your divider
-  return (static_cast<float>(raw) / 4095.0f) * 1200.0f;
+
+  return lux;
 }
+
+// =========================
+// MOTION SENSOR
+// =========================
 
 static bool readMotion() {
-  return digitalRead(PIN_MOTION) == LOW;
+
+  return digitalRead(PIN_MOTION) == HIGH;
+
 }
 
+// =========================
+// GAS SENSOR
+// =========================
+
+static int readGas() {
+
+  return analogRead(PIN_GAS_ADC);
+
+}
+
+// =========================
+// WIFI
+// =========================
+
 static void reconnectWifi() {
+
   if (WiFi.status() == WL_CONNECTED) {
     return;
   }
+
+  Serial.println("Connecting to WiFi...");
+
   WiFi.mode(WIFI_STA);
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
   uint8_t tries = 0;
+
   while (WiFi.status() != WL_CONNECTED && tries < 60) {
+
     delay(500);
+
     tries++;
+
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    Serial.print("WiFi connected, IP: ");
+
+    Serial.println(WiFi.localIP());
+
+  } else {
+
+    Serial.println("WiFi connection timeout");
+
   }
 }
 
+// =========================
+// MQTT
+// =========================
+
 static void reconnectMqtt() {
+
   if (mqtt.connected()) {
     return;
   }
-  String clientId = String("esp32-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-  mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS);
+
+  Serial.println("Connecting to MQTT...");
+
+  char clientId[32];
+
+  snprintf(clientId, sizeof(clientId), "esp32-client");
+
+  if (mqtt.connect(clientId, MQTT_USER, MQTT_PASS)) {
+
+    Serial.println("MQTT connected");
+
+  } else {
+
+    Serial.print("MQTT failed, rc=");
+
+    Serial.print(mqtt.state());
+
+    Serial.print(" -> broker ");
+
+    Serial.print(MQTT_HOST);
+
+    Serial.print(":");
+
+    Serial.print(MQTT_PORT);
+
+    Serial.print(" | ESP IP ");
+
+    Serial.println(WiFi.localIP());
+
+    Serial.println(
+      "rc=-2: no TCP to broker. Check MQTT_HOST=Mac LAN IP (ipconfig getifaddr en0), "
+      "docker mqtt up, same WiFi, then Upload firmware after editing secrets.h."
+    );
+
+  }
 }
+
+// =========================
+// SETUP
+// =========================
 
 void setup() {
+
   Serial.begin(115200);
-  delay(200);
+
+  delay(500);
+
   setupPins();
+
+  // AHT10
+  Wire.begin(PIN_SDA, PIN_SCL);
+
+  if (!aht.begin()) {
+
+    Serial.println("AHT10 not detected");
+
+  } else {
+
+    Serial.println("AHT10 connected");
+
+  }
+
+  // WiFi
   reconnectWifi();
+
+  // MQTT
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
+
   reconnectMqtt();
+
+  Serial.println("Smart Home Telemetry Started");
 }
 
+// =========================
+// LOOP
+// =========================
+
 void loop() {
+
   reconnectWifi();
+
   if (WiFi.status() != WL_CONNECTED) {
+
     delay(2000);
+
     return;
   }
 
   if (!mqtt.connected()) {
+
     reconnectMqtt();
+
     delay(500);
+
     return;
   }
+
   mqtt.loop();
 
   unsigned long now = millis();
-  if (now - lastPublish < static_cast<unsigned long>(PUBLISH_INTERVAL_MS)) {
+
+  if (now - lastPublish < PUBLISH_INTERVAL_MS) {
+
     delay(10);
+
     return;
   }
+
   lastPublish = now;
 
-  JsonDocument doc(384);
-  doc["device_id"] = DEVICE_ID;
-  doc["room"] = ROOM;
-  doc["light"] = readLightLux();
-  doc["motion"] = readMotion();
-  // Optional channels — omit if you have no sensors (backend tolerates nulls)
-  // doc["temperature"] = 22.5f;
-  // doc["humidity"] = 45.0f;
+  // =========================
+  // READ SENSORS
+  // =========================
 
-  char payload[MQTT_MAX_PACKET_SIZE];
-  const size_t n = serializeJson(doc, payload, sizeof(payload));
-  if (n == 0 || n >= sizeof(payload)) {
-    Serial.println("JSON too large");
-    return;
+  float light = readLightLux();
+
+  bool motion = readMotion();
+
+  int gas = readGas();
+
+  sensors_event_t humidity, temp;
+
+  aht.getEvent(&humidity, &temp);
+
+  // =========================
+  // LED ALERT
+  // =========================
+
+  if (gas > 1500) {
+
+    digitalWrite(PIN_LED, HIGH);
+
+  } else {
+
+    digitalWrite(PIN_LED, LOW);
+
   }
 
-  if (mqtt.publish(MQTT_TOPIC, reinterpret_cast<const uint8_t*>(payload), n, false)) {
-    Serial.printf("Published %u bytes to %s\n", static_cast<unsigned>(n), MQTT_TOPIC);
+  // =========================
+  // JSON
+  // =========================
+
+  StaticJsonDocument<512> doc;
+
+  doc["device_id"] = DEVICE_ID;
+
+  doc["room"] = ROOM;
+
+  doc["temperature"] = temp.temperature;
+
+  doc["humidity"] = humidity.relative_humidity;
+
+  doc["light"] = light;
+
+  doc["gas"] = gas;
+
+  doc["motion"] = motion;
+
+  doc["ts"] = now;
+
+  char payload[MQTT_MAX_PACKET_SIZE];
+
+  size_t n = serializeJson(doc, payload);
+
+  // =========================
+  // MQTT PUBLISH
+  // =========================
+
+  if (mqtt.publish(MQTT_TOPIC, payload)) {
+
+    Serial.println("Telemetry published");
+
+    Serial.println(payload);
+
   } else {
+
     Serial.println("MQTT publish failed");
+
   }
 }

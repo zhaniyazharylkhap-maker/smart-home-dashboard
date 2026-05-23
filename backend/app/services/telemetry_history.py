@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +23,9 @@ METRIC_ATTR = {
 }
 
 
+TelemetrySourceFilter = Literal["all", "simulated", "realtime"]
+
+
 def get_history(
     db: Session,
     *,
@@ -30,6 +34,7 @@ def get_history(
     range_key: str,
     room_name: str | None,
     device_external_id: str | None,
+    telemetry_source: TelemetrySourceFilter = "all",
 ) -> TelemetryHistoryResponse:
     if metric not in METRIC_ATTR:
         raise ValueError("invalid metric")
@@ -73,6 +78,10 @@ def get_history(
                 points=[],
             )
         q = q.where(Telemetry.device_id == dev.id)
+    elif telemetry_source == "simulated":
+        q = q.where(Telemetry.t_sim.isnot(None))
+    elif telemetry_source == "realtime":
+        q = q.where(Telemetry.t_sim.is_(None))
 
     q = q.order_by(Telemetry.timestamp.asc())
     rows = db.execute(q).scalars().all()

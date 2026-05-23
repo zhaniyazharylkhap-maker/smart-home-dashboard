@@ -46,12 +46,15 @@ export async function fetchTelemetryHistory(params: {
   range: string;
   room?: string;
   device_id?: string;
+  /** simulated | realtime (backend ignores when device_id is set) */
+  source?: string;
 }): Promise<TelemetryHistoryResponse> {
   const sp = new URLSearchParams();
   sp.set("metric", params.metric);
   sp.set("range", params.range);
   if (params.room) sp.set("room", params.room);
   if (params.device_id) sp.set("device_id", params.device_id);
+  if (params.source) sp.set("source", params.source);
   return apiFetch<TelemetryHistoryResponse>(`/telemetry/history?${sp.toString()}`);
 }
 

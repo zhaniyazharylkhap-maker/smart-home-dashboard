@@ -79,7 +79,9 @@ services:
     depends_on:
       - backend
 
+  # Synthetic telemetry — opt in: docker compose --profile dev-sim up -d
   simulator:
+    profiles: ["dev-sim"]
     build:
       context: ../simulator
       dockerfile: Dockerfile
@@ -97,6 +99,12 @@ services:
       # additionally rate-limited inside the simulator (~2-minute cooldown
       # per room) so the anomaly feed isn't dominated by repeated bursts.
       SPIKE_PROBABILITY: "0.003"
+      # Chapter 4 live injection sessions (+15C, 4 sessions): set to "1"
+      # INJECTION_ENABLED: "1"
+      # INJECTION_DELTA_C: "15"
+      # INJECTION_SESSIONS: "4"
+      # INJECTION_DURATION_TICKS: "90"
+      # INJECTION_PERIOD_TICKS: "600"
       JSON_DATASET_PATH: data/sensors_dataset.json
     depends_on:
       - mqtt

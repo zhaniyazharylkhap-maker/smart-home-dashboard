@@ -1,0 +1,77 @@
+{
+  "chapter_targets": {
+    "offline_ensemble_f1": 0.87,
+    "live_injection_f1": 0.8
+  },
+  "offline_injection_test": {
+    "method": "Streaming replay with +15C temperature injection, 4 sessions per split, stride=5. Threshold tuned on val injection F1, reported on test.",
+    "protocol": {
+      "inject_delta_c": 15.0,
+      "sessions": 4,
+      "duration_rows": 90,
+      "stride": 5,
+      "warmup_rows": 500
+    },
+    "ensemble_weights": {
+      "isolation_forest": 0.7,
+      "lof": 0.3
+    },
+    "val_tune_threshold": 44.5,
+    "val": {
+      "precision": 0.333,
+      "recall": 0.639,
+      "f1": 0.438
+    },
+    "test": {
+      "ensemble_if_lof": {
+        "precision": 0.816,
+        "recall": 0.986,
+        "f1": 0.893
+      },
+      "isolation_forest": {
+        "precision": 0.05,
+        "recall": 0.069,
+        "f1": 0.058
+      },
+      "lof": {
+        "precision": 0.274,
+        "recall": 1.0,
+        "f1": 0.43
+      },
+      "samples": 3934,
+      "injection_rate": 0.0183
+    }
+  },
+  "offline_proxy_test": {
+    "method": "Batch test slice vs proxy labels; default train-matched ensemble threshold.",
+    "default_threshold": 27.72518530091248,
+    "test_samples": 19668,
+    "isolation_forest": {
+      "precision": 0.461,
+      "recall": 0.341,
+      "f1": 0.392
+    },
+    "lof": {
+      "precision": 0.151,
+      "recall": 0.902,
+      "f1": 0.259
+    },
+    "ensemble_if_lof": {
+      "precision": 0.423,
+      "recall": 0.576,
+      "f1": 0.488
+    }
+  },
+  "live_injection_csv": {
+    "method": "Ground truth = periods where adaptive_threshold dropped below 25.0 (injection / default-threshold mode). Prediction = logged is_anomaly from the live pipeline.",
+    "source_csv": "/Users/ayauka/smart-home-dashboard/docs/thesis/anomaly_series_kitchen_sensor_01_live.csv",
+    "injection_windows": 5,
+    "samples": 2000,
+    "metrics": {
+      "precision": 0.51,
+      "recall": 1.0,
+      "f1": 0.676
+    }
+  },
+  "notes": "Chapter 4 Table 4.4 offline F1 (~0.87) aligns with offline_injection_test.test.ensemble_if_lof when the injection protocol is used. Proxy-label F1 (~0.49) is lower and reported separately as offline_proxy_test. Live CSV replay may be below the ~0.80 target if the capture includes long idle periods with spurious alerts outside injection windows."
+}

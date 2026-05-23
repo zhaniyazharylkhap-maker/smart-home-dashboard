@@ -29,6 +29,10 @@ Usage:
 
 Outputs:
     backend/ml/evaluation_report.json
+
+Chapter 4 (offline injection F1 ~0.87, live injection F1 ~0.80) uses a
+different protocol — run ``python -m scripts.evaluate_thesis`` after this
+script. See ``docs/thesis/METRICS.md``.
 """
 
 from __future__ import annotations

@@ -13,6 +13,7 @@ from app.models import Device, Room, Telemetry
 from app.schemas.telemetry import TelemetryIngest, TelemetryReading
 from app.services import contextual_storage
 from services.risk_engine import compute_risk
+from app.services.room_mapping import normalize_room_slug
 from app.services.telemetry_service import ensure_device, ensure_room
 from core.config import get_settings
 from core.redis_client import append_stream_event
@@ -80,6 +81,11 @@ def _enforce_ranges(payload: TelemetryIngest) -> None:
 
 def telemetry_ingest_from_dict(raw: dict) -> TelemetryIngest:
     data = _default_room(raw)
+    # Dataset simulator always attaches `t_sim`; physical MQTT/ESP32 typically omits
+    # it. For those payloads we only map onto canonical seeded rooms — never derive
+    # a new room slug from arbitrary device identifiers.
+    if data.get("t_sim") is None and data.get("room") is not None:
+        data["room"] = normalize_room_slug(str(data["room"]))
     payload = TelemetryIngest.model_validate(data)
     _enforce_ranges(payload)
     return payload
@@ -90,7 +96,11 @@ def ingest_telemetry(db: Session, payload: TelemetryIngest) -> Telemetry:
     # MQTT-ingested telemetry carries no user identity; assign the configured
     # default owner so multi-tenant filters in the API layer return data.
     owner_user_id = get_settings().mqtt_default_owner_user_id
-    room = ensure_room(db, payload.room, user_id=owner_user_id)
+    if payload.t_sim is None:
+        room_slug = normalize_room_slug(payload.room)
+    else:
+        room_slug = payload.room.strip().lower()
+    room = ensure_room(db, room_slug, user_id=owner_user_id)
     device = ensure_device(
         db, payload.device_id, room, payload.device_id, user_id=owner_user_id
     )

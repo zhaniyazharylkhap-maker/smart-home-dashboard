@@ -28,7 +28,26 @@ def telemetry_history(
     range_key: str = Query("24h", alias="range"),
     room: str | None = Query(None),
     device_id: str | None = Query(None, description="External device_id string"),
+    source: str | None = Query(
+        None,
+        description=(
+            "When set without device_id: filter history by simulator ticks (t_sim set) vs "
+            "physical MQTT rows (t_sim null). Ignored when device_id is set."
+        ),
+    ),
 ) -> TelemetryHistoryResponse:
+    telemetry_source = "all"
+    if device_id:
+        telemetry_source = "all"
+    elif source in {"simulated", "realtime"}:
+        telemetry_source = source
+    elif source is None or source == "" or source == "all":
+        telemetry_source = "all"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source must be all, simulated, or realtime",
+        )
     try:
         return get_history(
             db,
@@ -37,6 +56,7 @@ def telemetry_history(
             range_key=range_key,
             room_name=room,
             device_external_id=device_id,
+            telemetry_source=telemetry_source,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e

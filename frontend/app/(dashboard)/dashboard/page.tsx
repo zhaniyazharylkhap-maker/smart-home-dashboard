@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LiveAnomalyScoreCard } from "@/components/analytics/live-anomaly-score-card";
 import { OperationalMetricsPanel } from "@/components/analytics/operational-metrics-panel";
 import { SystemHealthStrip } from "@/components/analytics/system-health-strip";
+import { RoomTelemetrySourceBar } from "@/components/room-telemetry-source-bar";
 import { TelemetryReadingCard } from "@/components/telemetry-reading-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,11 +22,13 @@ import { Card, CardSectionLabel } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveTelemetry } from "@/hooks/use-live-telemetry";
+import { useRoomTelemetryModes } from "@/hooks/use-room-telemetry-modes";
 import { fetchDashboardStats } from "@/lib/api";
 import {
   humanizeAlertReasons,
   humanizeRoom,
 } from "@/lib/explanations";
+import { readingsMatchRoomMode } from "@/lib/room-telemetry-mode";
 import { cn } from "@/lib/utils";
 import type { DashboardStats } from "@/types/domain";
 
@@ -101,10 +104,39 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
 
+  const roomModes = useRoomTelemetryModes();
+  const filteredReadings = useMemo(
+    () => readings.filter((r) => readingsMatchRoomMode(roomModes.modes, r)),
+    [readings, roomModes.modes]
+  );
+
+  const filteredTimeline = useMemo(
+    () =>
+      timeline.filter((p) =>
+        readingsMatchRoomMode(roomModes.modes, {
+          room: p.room,
+          t_sim: p.t_sim,
+        })
+      ),
+    [timeline, roomModes.modes]
+  );
+
+  const filteredAnomalyByDevice = useMemo(() => {
+    const byId = new Map(readings.map((r) => [r.device_id, r]));
+    const out: typeof anomalyByDevice = {};
+    for (const [id, row] of Object.entries(anomalyByDevice)) {
+      const r = byId.get(id);
+      if (!r) continue;
+      if (!readingsMatchRoomMode(roomModes.modes, r)) continue;
+      out[id] = row;
+    }
+    return out;
+  }, [anomalyByDevice, readings, roomModes.modes]);
+
   const lastEventAt = useMemo(() => {
-    if (timeline.length === 0) return null;
-    return timeline[timeline.length - 1].timestamp;
-  }, [timeline]);
+    if (filteredTimeline.length === 0) return null;
+    return filteredTimeline[filteredTimeline.length - 1].timestamp;
+  }, [filteredTimeline]);
 
   const downloadMetricsCsv = () => {
     const rows = [
@@ -161,7 +193,7 @@ export default function DashboardPage() {
         ? "warning"
         : "safe";
 
-  const liveAnomalyCount = Object.values(anomalyByDevice).filter(
+  const liveAnomalyCount = Object.values(filteredAnomalyByDevice).filter(
     (a) => a.is_contextual_anomaly
   ).length;
 
@@ -251,9 +283,17 @@ export default function DashboardPage() {
       </section>
 
       <section className="mb-5">
+        <RoomTelemetrySourceBar
+          toggleRows={roomModes.toggleLabels}
+          modes={roomModes.modes}
+          onChange={roomModes.setModeForRoom}
+        />
+      </section>
+
+      <section className="mb-5">
         <LiveAnomalyScoreCard
-          timeline={timeline}
-          anomalyByDevice={anomalyByDevice}
+          timeline={filteredTimeline}
+          anomalyByDevice={filteredAnomalyByDevice}
         />
       </section>
 
@@ -268,10 +308,10 @@ export default function DashboardPage() {
           <div className="mb-2 flex items-center justify-between">
             <CardSectionLabel>Live Telemetry Grid</CardSectionLabel>
             <span className="text-[11px] font-light text-text-dim">
-              {readings.length} device{readings.length === 1 ? "" : "s"}
+              {filteredReadings.length} device{filteredReadings.length === 1 ? "" : "s"}
             </span>
           </div>
-          {readings.length === 0 && !error ? (
+          {filteredReadings.length === 0 && !error ? (
             <EmptyState
               icon={Activity}
               title="Waiting for telemetry stream"
@@ -279,7 +319,7 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
-              {readings.map((r, i) => (
+              {filteredReadings.map((r, i) => (
                 <TelemetryReadingCard key={r.device_id} reading={r} index={i} />
               ))}
             </div>
@@ -372,7 +412,7 @@ export default function DashboardPage() {
           throughputStats={throughputStats}
           streamHealth={streamHealth}
           connected={connected}
-          timeline={timeline}
+          timeline={filteredTimeline}
         />
       </section>
     </div>
